@@ -1,0 +1,141 @@
+# Roadmap & status
+
+For the team. Not read by `harness/package.py` (only `agent.py` + declared weights get zipped
+for submission), so nothing here ever reaches the competition upload regardless of where it
+lives in the repo.
+
+**Deadline:** submissions close **2026-09-11, 11:00 UTC**.
+**Hardware:** development started on an Intel Mac, which cannot install `torch`, `onnxruntime`,
+or `numba` at the platform's pinned versions (no wheels for that architecture at these
+versions). A Silicon Mac was expected within a couple of days of starting; GitHub Actions CI
+(Ubuntu + Apple Silicon `macos-latest` runners) covers the gap in the meantime.
+
+The technical content of Phase A/B below comes directly from `docs/IDEAS.md` (the starter
+repo's own "where the strength actually comes from" guide) and from what testing the existing
+baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
+
+## Status at a glance
+
+| Milestone | What | Status |
+|---|---|---|
+| Setup | Fork starter, working random-mover, git/GitHub backup | ✅ done |
+| A0 | GitHub Actions CI (Linux + Apple Silicon runners) | ✅ done, passing |
+| A1 | Alpha-beta negamax search, fixed depth | ✅ done — see below |
+| A2 | Move ordering (MVV-LVA) | ⬜ next |
+| A3 | Transposition table | ⬜ planned |
+| A4 | Iterative deepening + real time management | ⬜ planned |
+| A5 | Quiescence search | ⬜ planned |
+| A6 | Evaluation upgrade: piece-square tables | ⬜ planned |
+| B0 | Full env parity on Silicon Mac (torch/numba/onnxruntime) | ⬜ blocked on hardware |
+| B1 | numba-jit the evaluation | ⬜ planned |
+| B2 | Neural-net evaluation (**stretch goal**, not required) | ⬜ optional |
+| C | Submission safety buffer (gate, edge cases, zip, smoke games) | ⬜ last 1-2 days |
+
+## How every milestone gets measured
+
+Per `docs/IDEAS.md`: two games tell you nothing, and "better than my last one" is the only
+comparison that matters. At the end of each milestone:
+1. Snapshot the agent into `versions/<milestone-name>/agent.py` (mirrors `baselines/`'s layout,
+   so it's directly usable as a harness opponent).
+2. Run `tools/batch.py` (or `harness.arena`) against the previous snapshot and against
+   `baselines/greedy` / `baselines/minimax`, saving PGNs + a written summary in `game-logs/`.
+3. Record findings in `game-logs/FEEDBACK.md`.
+4. Notable individual games get added to the **Scoresheet** board-viewer artifact for visual
+   review (link shared separately per update — it's a private Claude artifact, not part of the
+   repo).
+
+Opening books are deliberately out of scope: rated games start from curated non-standard
+positions, so a book keyed on move one is often already out of book (per `docs/IDEAS.md`)
+— effort goes to search instead.
+
+---
+
+## Phase A — pure Python, no hardware blocker
+
+**A0. GitHub Actions CI** — runs `make gate` on Ubuntu and a harness game on macOS (Apple
+Silicon runner)/Windows, on every push. Validates torch/numba/onnxruntime-touching code without
+needing local hardware that supports them.
+
+**A1. Alpha-beta negamax, fixed depth** *(done)* — replaced the random-mover with negamax +
+alpha-beta pruning, reusing `baselines/minimax`'s exact evaluation (material + mobility,
+unchanged) so the comparison isolates what the search algorithm alone buys.
+
+**A2. Move ordering (MVV-LVA)** — order captures before quiet moves, captures sorted by
+most-valuable-victim/least-valuable-attacker. Per `docs/IDEAS.md` this is the lever that makes
+alpha-beta actually pay off ("the gap ... is mostly move ordering"). Expected to let us push
+depth back toward 4 safely.
+
+**A3. Transposition table** — a dict keyed on `board._transposition_key()`, storing at minimum
+depth + score. Persisting it across moves within a game (not just within one search) is a real
+gain, since the process stays alive between `get_move` calls.
+
+**A4. Iterative deepening + real time management** — replace fixed depth with iterative
+deepening (depth 1, 2, 3, ... keeping the best move from each pass), driven by a real budget
+from `time_left_ms` (starting point: `time_left_ms / max(20, expected_moves_left)`), checked
+*inside* the search loop. This is the fix for the flagging risk found during A1 testing (see
+below) — not optional.
+
+**A5. Quiescence search** — captures-only extension at leaf nodes, fixing the horizon effect
+where the static eval is measured mid-exchange.
+
+**A6. Evaluation upgrade** — material + piece-square tables (and mobility/king safety if time
+allows), on top of the now-solid search. This becomes the reference point for judging whether
+the stretch-goal neural net (B2) is actually worth shipping.
+
+## Phase B — once on Apple Silicon hardware
+
+**B0. Full environment parity** — plain `uv sync` (no exclusions); confirm torch, onnxruntime,
+numba install cleanly; run `make gate`.
+
+**B1. numba-jit the evaluation** — following `baselines/numba/agent.py`'s pattern exactly:
+encode board state into numpy arrays, `@njit` the hot evaluation function, warm it up once at
+import (inside the init budget, not on the clock). The win is the extra depth the speed buys,
+not the eval call itself.
+
+**B2. Neural-net evaluation — stretch goal only.** A solid classical engine (A0–A6, B1) is the
+safe submission; this is attempted only with real time to spare. Train a small NNUE-style net
+in torch offline (self-play / public games, labelled with a search-based signal — allowed, since
+the restriction is on what ships in the zip, not what's learned from), export to ONNX, keep it
+small (1–40 MB, per `docs/IDEAS.md`'s sizing guidance), run inference via `onnxruntime`. Ships
+only if it actually beats the classical engine in an arena run.
+
+## Phase C — submission safety buffer (last 1–2 days before Sept 11)
+
+- `make gate` (ruff + mypy strict + quick sanity games) clean.
+- Stress-test edge cases: no legal moves, promotion, underpromotion, en passant, insufficient
+  material.
+- If torch is used anywhere: `torch.set_num_threads(1)` at import.
+- `make zip`; confirm `submission.zip` is under the 50 MB cap with `agent.py` at the root.
+- Run the platform's required two smoke games (one per color) with days of margin left.
+
+---
+
+## Milestone details
+
+### A0 — CI enabled
+Re-added `.github/workflows/ci.yml` from the upstream starter (skipped during the initial fork).
+First run passed: `make gate` on Ubuntu, harness games on macOS (Apple Silicon) and Windows
+runners.
+
+### A1 — Alpha-beta negamax search (fixed depth)
+
+Same evaluation as `baselines/minimax` (material + mobility), search replaced with negamax +
+alpha-beta pruning. Depth started at 4, but real testing found a serious issue:
+
+- **Depth 4 flagged 20/20 games** at fast test control (10s+0.1s) — a single middlegame move
+  measured ~2.2s with no move ordering yet, and that adds up fast with zero time awareness.
+- **Depth 3** (~4x faster) fixed most, not all, of it:
+
+| Opponent | Clock | Score | Record | Flags |
+|---|---|---|---|---|
+| `baselines/greedy` | fast (10s+0.1s) | 85.0% | +8 =1 -1 | 1/10 |
+| `baselines/minimax` | fast (10s+0.1s) | 20.0% | +0 =4 -6 | 5/10 |
+| `baselines/minimax` | competition (120s+0.5s) | 58.3% | +3 =1 -2 | 0/6 |
+
+The flag risk turned out to be specific to the fast *test* clock, not the real 120s+0.5s
+competition clock (zero flags there) — but it confirms time management (A4) is a hard
+requirement before any version of this agent ships, and that fast-control volume testing isn't
+safe to rely on until A4 lands. A 58.3% score against `minimax` (not a rout) also shows depth 3
+alone hasn't fully recovered what we gave up dropping from depth 4 — move ordering (A2) is what
+should buy that back. Full data: `game-logs/v1-alphabeta-vs-*/`, written up in
+`game-logs/FEEDBACK.md`.
