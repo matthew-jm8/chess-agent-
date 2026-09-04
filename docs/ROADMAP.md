@@ -37,8 +37,8 @@ baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
 | A1 | Alpha-beta negamax search, fixed depth | ✅ done — see below |
 | A2 | Move ordering (MVV-LVA) | ✅ done — see below |
 | A3 | Transposition table | ✅ done — see below |
-| A4 | Iterative deepening + real time management | ⬜ next |
-| A5 | Quiescence search | ⬜ planned |
+| A4 | Iterative deepening + real time management | ✅ done — see below |
+| A5 | Quiescence search | ⬜ next |
 | A6 | Evaluation upgrade: piece-square tables | ⬜ planned |
 | B0 | Full env parity on Silicon Mac (torch/numba/onnxruntime) | ⬜ blocked on hardware |
 | B1 | numba-jit the evaluation | ⬜ planned |
@@ -86,11 +86,11 @@ always-trust-the-cache version). Persists across moves within a game, since the 
 alive between `get_move` calls. Strength-neutral at this fixed depth (as a correct TT should
 be) — its value here is speed and cross-move memory, not different move choices. See below.
 
-**A4. Iterative deepening + real time management** — replace fixed depth with iterative
-deepening (depth 1, 2, 3, ... keeping the best move from each pass), driven by a real budget
-from `time_left_ms` (starting point: `time_left_ms / max(20, expected_moves_left)`), checked
-*inside* the search loop. This is the fix for the flagging risk found during A1 testing (see
-below) — not optional.
+**A4. Iterative deepening + real time management** *(done)* — replaced fixed `DEPTH` with
+iterative deepening (depth 1, 2, 3, ... keeping the best move from the last completed pass),
+driven by a real budget from `time_left_ms`, checked on every single search node. Found two real
+bugs by measuring rather than guessing (a too-coarse clock-check interval, and an oversized
+safety margin that was silently capping the search at depth 2) — see below.
 
 **A5. Quiescence search** — captures-only extension at leaf nodes, fixing the horizon effect
 where the static eval is measured mid-exchange.
@@ -208,3 +208,41 @@ strength-neutral at this fixed depth, a speed optimization only. Baseline result
 too (90.0%/0 flags vs `greedy`, 65.0%/1 flag and 66.7%/0 flags vs `minimax` at fast/competition
 clock respectively — all within normal variance of A2's numbers). Full data:
 `game-logs/v3-tt-vs-*/`, written up in `game-logs/FEEDBACK.md`.
+
+### A4 — Iterative deepening + real time management
+
+Replaced the fixed `DEPTH = 3` with iterative deepening: search 1 ply deep, then 2, then 3, ...,
+keeping the best move from the last *fully completed* pass, driven by a real time budget
+(`time_left_ms / max(20, expected_moves_left)`) checked on every single search node via a
+`TimeUp` exception that unwinds the recursion immediately.
+
+**Two real bugs, both caught by measuring instead of assuming:**
+
+1. **Clock-check interval.** First version checked the deadline every 1024 nodes — measured
+   directly, 1024 nodes cost ~110ms here (each node ~0.1ms in Python), so a request with
+   essentially zero time budget still took 115ms to respond. Fixed by checking every single node
+   instead (a `time.monotonic()` call costs nanoseconds against a ~100-microsecond node, so the
+   overhead is negligible) — the same "no time left" case now responds in 0.4ms.
+2. **Oversized safety margin.** `SAFETY_MARGIN_MS = 150` was an unverified guess. With per-node
+   checking in place, directly measuring real overshoot past the deadline (bypassing the budget
+   formula, testing exact deadlines from 50ms–1000ms) showed overshoot stayed under 1ms in every
+   case — the margin was ~150x more conservative than needed, and it was actively harmful: it was
+   silently capping the search at depth 2 for most of a real fast-control game, because a typical
+   ~100ms-after-margin budget wasn't enough to finish depth 3 (which now takes ~150-200ms
+   post-A2/A3). Reduced to `SAFETY_MARGIN_MS = 50`; a head-to-head against `versions/v3-tt` went
+   from 40.0% back to exactly 50.0% once fixed, confirming the lost strength was fully recovered.
+
+**Results (all after both fixes):**
+
+| Opponent | Clock | Score | Record | Flags |
+|---|---|---|---|---|
+| `versions/v3-tt` | fast (10s+0.1s) | 50.0% | +10 =10 -10 | 0/30 |
+| `baselines/greedy` | fast (10s+0.1s) | 97.5% | +19 =1 -0 | 0/20 |
+| `baselines/minimax` | fast (10s+0.1s) | 57.5% | +6 =11 -3 | 0/20 |
+| `baselines/minimax` | competition (120s+0.5s) | 58.3% | +1 =5 -0 | 0/6 |
+
+Zero flags everywhere tested — the first milestone with that property across the board. The
+strength numbers roughly match the fixed-depth predecessor (expected: same depth reached most of
+the time, at this sample size and clock), but the real payoff is adaptivity and safety rather
+than a visible strength jump here — going deeper when the clock allows, never gambling when it
+doesn't. Full data: `game-logs/v4-timemgmt-vs-*/`, written up in `game-logs/FEEDBACK.md`.

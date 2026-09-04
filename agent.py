@@ -2,6 +2,7 @@
 
 import math
 import random
+import time
 from collections.abc import Hashable
 from typing import NamedTuple
 
@@ -31,17 +32,68 @@ MATE = 1e6
 # least valuable attacker.
 ATTACKER_VALUE = {**PIECE_VALUE, chess.KING: 10_000.0}
 
-# Total plies searched from the root. baselines/minimax searches 2 (fixed, no pruning).
+# --- Time management (milestone A4) ---
 #
-# History: depth 4 with no move ordering took ~2.2s on an ordinary middlegame move and lost
-# 20/20 fast-control games by flagging (milestone A1). Adding MVV-LVA move ordering (A2) cut
-# that to ~1.4s but still flagged 7/10 at fast control. Adding a transposition table on top
-# (this milestone, A3) cut it further to ~1.0s (cold cache) - still not enough: a depth-4 batch
-# with both ordering and TT still flagged 6/10 games at fast control. Depth 3 stays for now.
-# This is still a stopgap, not a fix - there is still no time management (milestone A4), so
-# this number goes back up once that lands and the clock itself decides how deep to search
-# instead of a fixed constant guessing at it.
-DEPTH = 3
+# Milestones A1-A3 all used a fixed search depth and found the same problem three times over:
+# a fixed depth has no idea how much clock is actually left, so it's either too shallow (wastes
+# a generous clock) or too deep (flags on a tight one) - there's no single right answer, because
+# the right answer changes every move. The fix is to stop guessing a depth up front and instead
+# search iteratively deeper - depth 1, then 2, then 3, ... - keeping the best move found by the
+# last depth that *finished*, and stopping the moment the clock says to. This is called
+# "iterative deepening": each shallow pass is cheap compared to the deep ones, so re-doing that
+# shallow work isn't wasted the way it sounds - what it buys is always having a good answer
+# ready, however far deepening actually got before time ran out.
+MAX_DEPTH = 40  # a generous, mostly symbolic cap - the clock is expected to bind first in almost
+# every real position; this just bounds the pathological case (e.g. a near-empty endgame board
+# where each depth is so cheap that dozens could complete) rather than depending on time alone.
+
+# Budget this move gets, per docs/IDEAS.md's own starting formula: time_left_ms divided by an
+# estimate of how many of our own moves remain. OWN_MOVES_PLAYED counts our moves so far this
+# game (module state, persists between get_move calls, resets naturally each new process/game).
+# Assume a "typical" game is roughly 40 of our own moves; the max(20, ...) floor means we never
+# assume fewer than 20 remain even very late in a long game, so we never allocate more than
+# time_left_ms / 20 to a single move just because the game has run long.
+OWN_MOVES_PLAYED = 0
+ASSUMED_GAME_LENGTH_PLIES = 40
+
+# Real, measured margin, not a guess. Checking the clock on every node (see check_time, below)
+# means overshoot past the deadline measured under 1ms across a range of budgets from 50ms to
+# 1000ms in testing - there's no large "checking gap" to buy insurance against here. This value
+# is deliberately just a healthy multiple of that measured overshoot, not the old (much
+# larger, and it turned out actively harmful) guess: a bigger margin was silently starving the
+# search of the ~150ms it usually takes to even finish depth 3, dropping real games all the way
+# back down to depth 2 for the entire early game - measured directly, not assumed, by tracing
+# a realistic fast-control move and finding it stopped at depth 2 with a 150ms margin in place.
+SAFETY_MARGIN_MS = 50
+
+
+class TimeUp(Exception):
+    """Not an error - a control-flow signal to unwind the search the moment the deadline for
+    this move passes. Caught once, at the top of the iterative deepening loop in get_move.
+    """
+
+
+DEADLINE = math.inf  # a time.monotonic() value; set fresh at the start of every get_move call
+
+# Measured, not assumed: checking every node here costs about 1024x less than skipping 1024 of
+# them saves. A "check every N nodes" interval only makes sense relative to how expensive a
+# node actually is - in a fast, compiled engine doing millions of nodes/sec, skipping 1024 of
+# them between checks is a rounding error; here, one node (move generation, an evaluation,
+# maybe a TT lookup, all in Python) measured close to 0.1ms, so a 1024-node interval let a
+# single tiny-budget move overshoot by ~100ms before ever getting a chance to bail out - the
+# reasonable-sounding number turned out to be tuned for a completely different engine's speed.
+# Checking every node costs a time.monotonic() call - a handful of nanoseconds - against a node
+# that costs on the order of 100 microseconds; the overhead is negligible either way.
+
+
+def check_time() -> None:
+    """Raise TimeUp the moment our budget for this move is gone. Called from inside negamax,
+    not just between iterative-deepening passes - a single depth can itself take too long
+    (measured over a full second at depth 4 in earlier milestones), so waiting until a whole
+    depth finishes to check the clock is not enough on its own.
+    """
+    if time.monotonic() >= DEADLINE:
+        raise TimeUp
 
 # --- Transposition table (milestone A3) ---
 #
@@ -138,6 +190,8 @@ def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
     remaining moves. That cutoff is what lets us search deeper than plain minimax in the same
     time: we skip branches whose outcome can't change the final decision.
     """
+    check_time()  # may raise TimeUp - see get_move for how an unfinished depth is handled
+
     moves = list(board.legal_moves)
     if not moves:
         # No legal moves: checkmate (bad for the side to move) or stalemate (a draw). Not
@@ -186,6 +240,31 @@ def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
     return best
 
 
+def search_root(board: chess.Board, depth: int, moves: list[chess.Move]) -> chess.Move:
+    """One complete root search at a fixed depth: score every legal move, return one of the
+    best (ties broken randomly). `moves` is precomputed once by the caller and reused across
+    every depth - MVV-LVA ordering doesn't depend on search depth, so there's no need to
+    recompute it each pass. May raise TimeUp partway through; get_move handles that by simply
+    not using this depth's result at all, not by salvaging whichever root moves it did finish -
+    a plain, easy-to-verify rule, at the cost of a little wasted work right at the moment the
+    clock runs out.
+    """
+    best_score = -math.inf
+    best_moves: list[chess.Move] = []
+    alpha, beta = -math.inf, math.inf
+    for move in moves:
+        board.push(move)
+        score = -negamax(board, depth - 1, -beta, -alpha)
+        board.pop()
+        if score > best_score:
+            best_score = score
+            best_moves = [move]
+            alpha = max(alpha, best_score)
+        elif score == best_score:
+            best_moves.append(move)
+    return random.choice(best_moves)
+
+
 def get_move(fen: str, time_left_ms: int) -> str:
     """Return a legal move in UCI notation.
 
@@ -199,22 +278,27 @@ def get_move(fen: str, time_left_ms: int) -> str:
     print() is safe. Your stdout is redirected away from the protocol stream, discarded
     during rated games and shown back to you in the validation log.
     """
+    global DEADLINE, OWN_MOVES_PLAYED
     board = chess.Board(fen)
+    moves = order_moves(board, list(board.legal_moves))
 
-    # Root loop: try every legal move, score the resulting position with negamax, and keep
-    # whichever move(s) score best. This has no time management yet (fixed DEPTH) - that
-    # comes in a later milestone once iterative deepening is in place.
-    best_score = -math.inf
-    best_moves: list[chess.Move] = []
-    alpha, beta = -math.inf, math.inf
-    for move in order_moves(board, list(board.legal_moves)):
-        board.push(move)
-        score = -negamax(board, DEPTH - 1, -beta, -alpha)
-        board.pop()
-        if score > best_score:
-            best_score = score
-            best_moves = [move]
-            alpha = max(alpha, best_score)
-        elif score == best_score:
-            best_moves.append(move)
-    return random.choice(best_moves).uci()
+    # Ready instantly, before any real searching happens: the answer if the clock is so tight
+    # we can't even finish a depth-1 pass. docs/IDEAS.md is explicit that a flag - not a bad
+    # move - is the most common self-inflicted loss, so there must always be *something* legal
+    # to return, however little time is left.
+    best_move = moves[0]
+
+    OWN_MOVES_PLAYED += 1
+    expected_moves_left = max(20, ASSUMED_GAME_LENGTH_PLIES - OWN_MOVES_PLAYED)
+    budget_ms = time_left_ms / expected_moves_left
+    DEADLINE = time.monotonic() + max(0.0, budget_ms - SAFETY_MARGIN_MS) / 1000
+
+    depth = 1
+    try:
+        while depth <= MAX_DEPTH:
+            best_move = search_root(board, depth, moves)
+            depth += 1
+    except TimeUp:
+        pass  # keep whatever the last fully-completed depth found; see search_root's docstring
+
+    return best_move.uci()

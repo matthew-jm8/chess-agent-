@@ -1,0 +1,27 @@
+{
+  "label": "v4-timemgmt-sanity",
+  "agent": ".",
+  "opponent": "baselines/greedy",
+  "clock": "fast test clock (10s+0.1s)",
+  "base_ms": 10000,
+  "increment_ms": 100,
+  "games": 1,
+  "wins": 1,
+  "draws": 0,
+  "losses": 0,
+  "score": 1.0,
+  "terminations": {
+    "checkmate": 1
+  },
+  "results": [
+    {
+      "index": 1,
+      "pgn_file": "game-01.pgn",
+      "agent_color": "white",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 41
+    }
+  ]
+}

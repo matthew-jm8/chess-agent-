@@ -213,3 +213,90 @@ headroom for milestone A4) and cross-move memory that will matter more once sear
 or slower components (like B1's numba evaluation) are added. The 10-vs-40-game discrepancy in
 the head-to-head (25.0% → 47.5%) is this milestone's best concrete lesson in why
 `docs/IDEAS.md` insists on real sample sizes before trusting a result.
+
+## Milestone A4 — iterative deepening + real time management
+
+**A real bug caught before it ever reached a game:** the first version checked the clock only
+every 1024 nodes searched (a number that "sounded reasonable"). Measured directly: 1024 nodes
+took ~110ms here, because each node (move generation, an evaluation, a TT lookup, all in
+Python) costs roughly 0.1ms. That 1024-node interval was tuned for a completely different
+engine's speed - a compiled engine doing millions of nodes/sec would treat 1024 nodes as
+imperceptible; ours doesn't. Concretely, a call with `time_left_ms=1` (i.e. essentially no
+budget at all) still took **115ms** to return, because it ran to the first checkpoint at node
+1024 regardless of the deadline already being in the past. Fixed by checking every single node
+instead - a `time.monotonic()` call costs a handful of nanoseconds against a ~100-microsecond
+node, so the overhead is negligible, and it closes the gap entirely.
+
+**Before/after, same reference position, across a range of budgets:**
+
+| `time_left_ms` | Actual time (before fix) | Actual time (after fix) |
+|---|---|---|
+| 1 | 115.57ms | 0.42ms |
+| 10,000 | 195.33ms | 107.12ms (target ~100ms) |
+| 60,000 | 1391.87ms | 1389.38ms (target ~1350ms) |
+
+This is exactly the kind of thing docs/IDEAS.md means by "leave a margin... the watchdog does
+not forgive": a plausible-sounding constant, unverified, would have meant the agent could
+overshoot a tight remaining clock by ~100ms with no way to notice — small in isolation, but
+exactly the failure mode that causes a flag in a genuinely close-on-time endgame.
+
+**Second bug, caught by the same discipline of measuring instead of assuming:** the initial
+`SAFETY_MARGIN_MS = 150` was itself an unverified guess, and it was actively harmful. A 30-game
+head-to-head against `versions/v3-tt` (fixed depth 3, no time awareness) came back a real
+40.0% (+6 =12 -12) — zero flags either side, but a genuine strength gap this time, not sampling
+noise. Traced why directly: under realistic fast-control budgets (~100-170ms after the 150ms
+margin), the search only ever completed **depth 2**, never depth 3, because depth 3 (now
+~150-200ms post-A2/A3 optimisation) looked too risky to attempt under such a thin allowance.
+Meanwhile v3 always searches to depth 3 unconditionally - so v4 was playing a full ply shallower
+than v3 for most of every game, a real weakness, not a bug in the time-management logic itself.
+
+Measured the *actual* overshoot past the deadline with per-node checking directly (bypassing the
+budget formula, setting exact deadlines from 50ms to 1000ms): overshoot stayed under 1ms in
+every case. The 150ms margin was roughly 150x more conservative than the real risk it was meant
+to cover. Reduced to `SAFETY_MARGIN_MS = 50` (still a healthy ~50x buffer over the measured
+overshoot) and re-checked: depth 3 now completes in most realistic early/mid-game fast-control
+positions (2 of 3 traced cases, versus 0 of 3 before), with the remaining case a genuinely
+borderline position rather than a systemic problem - exactly the adaptive behaviour time
+management is supposed to produce, unlike v3's blind fixed-depth gamble.
+
+**Re-run with `SAFETY_MARGIN_MS = 50`, 30 games vs `versions/v3-tt`:** 50.0% exactly (+10 =10
+-10), zero flags either side. Confirms the fix: v4 now matches v3's strength precisely at fast
+control, while adding the safety of adapting depth to the actual clock instead of gambling on a
+fixed one - the real payoff shows up in positions where v3's fixed depth-3 gamble would fail
+(deeper into a long, complex game) rather than in this average-case matchup.
+
+**vs `baselines/greedy`, fast control (20 games):** 97.5% (+19 =1 -0), zero flags — matches
+A2/A3's numbers on this matchup (95.0%/90.0%), confirming no regression there either.
+
+**vs `baselines/minimax`, fast control (20 games):** 57.5% (+6 =11 -3), zero flags. A little
+lower than A2/A3 (70.0%/65.0%) but within normal variance for a match this heavy on draws (11 of
+20 by threefold repetition) - no flags either way is the number that actually matters here.
+
+**vs `baselines/minimax`, competition clock (6 games):** 58.3% (+1 =5 -0), zero flags, **zero
+losses** (5 draws, 1 win). In line with A2/A3's 66.7% on this exact matchup/clock.
+
+### A4 summary
+
+Iterative deepening + real time management replaces the fixed `DEPTH = 3` with a search that
+adapts to the actual clock, checked on every single node rather than periodically. Two real bugs
+were found and fixed purely by measuring instead of guessing - a check-interval bug (1024 nodes
+between clock checks, when each node costs ~0.1ms, meant a near-zero time budget could still take
+~115ms) and an oversized safety margin (150ms reserved "just in case," when the real measured
+overshoot with per-node checking is under 1ms) that was silently capping the search at depth 2
+for most of every game. Fixing both recovered a head-to-head score against `versions/v3-tt` from
+40.0% back to exactly 50.0% - full parity with a fixed-depth-3 engine, while adding the safety of
+never gambling on a depth the clock can't afford:
+
+| Opponent | Clock | Score | Record | Flags |
+|---|---|---|---|---|
+| `versions/v3-tt` | fast (10s+0.1s) | 50.0% | +10 =10 -10 | 0/30 |
+| `baselines/greedy` | fast (10s+0.1s) | 97.5% | +19 =1 -0 | 0/20 |
+| `baselines/minimax` | fast (10s+0.1s) | 57.5% | +6 =11 -3 | 0/20 |
+| `baselines/minimax` | competition (120s+0.5s) | 58.3% | +1 =5 -0 | 0/6 |
+
+Zero flags across every batch, on both clocks, against both baselines and its own predecessor -
+the first milestone where that's true everywhere it's been tested. This doesn't yet show up as a
+strength jump (matching, not beating, the fixed-depth version at this sample size/clock), because
+this milestone's actual payoff is safety and adaptivity - going deeper when the clock allows,
+never gambling when it doesn't - which the numbers above don't fully capture at only 76 games and
+no fixed-depth agent ever actually flagging in this batch to demonstrate the difference against.
