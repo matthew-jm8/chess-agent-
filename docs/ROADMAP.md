@@ -14,6 +14,20 @@ The technical content of Phase A/B below comes directly from `docs/IDEAS.md` (th
 repo's own "where the strength actually comes from" guide) and from what testing the existing
 baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
 
+## What each package does
+
+- **torch (PyTorch)** — the library for building and training neural networks. Needed for
+  anything on the machine-learning side: the stretch-goal neural net evaluation function we've
+  talked about.
+- **onnxruntime** — a tool for running an already-trained neural network fast, in a portable
+  format called ONNX. The idea from the roadmap: train the network with torch on a beefy setup,
+  then export it to ONNX and use onnxruntime for the actual fast, lightweight inference during a
+  game (since you don't want the heavier training library running during timed matches).
+- **numba** — not about neural networks at all. It's a tool that speeds up ordinary Python code
+  by compiling it into fast machine code just before it runs (a "JIT" — just-in-time compiler).
+  This is used to make your board-evaluation function run much faster, so your search can go
+  deeper in the same time budget — completely separate from ML.
+
 ## Status at a glance
 
 | Milestone | What | Status |
