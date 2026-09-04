@@ -32,6 +32,9 @@ dist/
 .vscode/
 .idea/
 
+# --- Claude Code local session/settings files (machine/session-specific, not project config) ---
+.claude/
+
 # --- Model weights / large files ---
 # Small ONNX exports are fine to commit; ignore common large-weight formats
 # and anything explicitly named "large". Un-ignore individual files with
