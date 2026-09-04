@@ -49,3 +49,8 @@ dist/
 # --- Starter harness output (from aichessathon-starter) ---
 submission.zip
 *.pgn
+
+# --- Exception: game-logs/ holds committed batch-test records (PGN + summary.json) for
+# visual review via the game viewer artifact. Never read by harness/package.py, so it never
+# ends up in the submission zip regardless of being tracked here. ---
+!game-logs/**/*.pgn
