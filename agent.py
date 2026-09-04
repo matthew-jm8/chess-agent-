@@ -22,10 +22,16 @@ MOBILITY_WEIGHT = 4.0
 MATE = 1e6
 
 # Total plies searched from the root. baselines/minimax searches 2 (fixed, no pruning).
-# Alpha-beta prunes branches that can't affect the final choice, so it can afford to look
-# further ahead in the same time: 4 plies here means "look 2 full moves ahead" (each side
-# moves twice).
-DEPTH = 4
+#
+# Measured on this machine: depth 4 took ~2.2s on a fairly ordinary middlegame position
+# (no move ordering yet, so alpha-beta prunes far less than it eventually will - see
+# docs/IDEAS.md: "alpha-beta only pays off when good moves come first"). A handful of moves
+# like that blows a 10s fast-control clock entirely, which is exactly what happened: an
+# arena run at depth 4 lost all 20 games by flagging. Depth 3 measured ~4x faster and
+# survives fast-control testing. This is a stopgap, not a fix - there is still no time
+# management (milestone A4) or move ordering (milestone A2) to make depth 4+ safe, so this
+# number goes back up once those land.
+DEPTH = 3
 
 
 def evaluate(board: chess.Board, mobility: int) -> float:

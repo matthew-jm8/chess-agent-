@@ -1,0 +1,109 @@
+{
+  "label": "v1-alphabeta-vs-minimax",
+  "agent": ".",
+  "opponent": "baselines/minimax",
+  "base_ms": 10000,
+  "increment_ms": 100,
+  "games": 10,
+  "wins": 0,
+  "draws": 4,
+  "losses": 6,
+  "score": 0.2,
+  "terminations": {
+    "flag": 5,
+    "checkmate": 1,
+    "threefold_repetition": 4
+  },
+  "results": [
+    {
+      "index": 1,
+      "pgn_file": "game-01.pgn",
+      "agent_color": "white",
+      "result": "black",
+      "termination": "flag",
+      "score_for_agent": "loss",
+      "plies": 90
+    },
+    {
+      "index": 2,
+      "pgn_file": "game-02.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "flag",
+      "score_for_agent": "loss",
+      "plies": 25
+    },
+    {
+      "index": 3,
+      "pgn_file": "game-03.pgn",
+      "agent_color": "white",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 88
+    },
+    {
+      "index": 4,
+      "pgn_file": "game-04.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "flag",
+      "score_for_agent": "loss",
+      "plies": 23
+    },
+    {
+      "index": 5,
+      "pgn_file": "game-05.pgn",
+      "agent_color": "white",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 77
+    },
+    {
+      "index": 6,
+      "pgn_file": "game-06.pgn",
+      "agent_color": "black",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 184
+    },
+    {
+      "index": 7,
+      "pgn_file": "game-07.pgn",
+      "agent_color": "white",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 44
+    },
+    {
+      "index": 8,
+      "pgn_file": "game-08.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "flag",
+      "score_for_agent": "loss",
+      "plies": 37
+    },
+    {
+      "index": 9,
+      "pgn_file": "game-09.pgn",
+      "agent_color": "white",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 97
+    },
+    {
+      "index": 10,
+      "pgn_file": "game-10.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "flag",
+      "score_for_agent": "loss",
+      "plies": 39
+    }
+  ]
+}
