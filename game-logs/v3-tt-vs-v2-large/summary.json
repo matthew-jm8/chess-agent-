@@ -1,0 +1,379 @@
+{
+  "label": "v3-tt-vs-v2-large",
+  "agent": ".",
+  "opponent": "versions/v2-ordering",
+  "clock": "fast test clock (10s+0.1s)",
+  "base_ms": 10000,
+  "increment_ms": 100,
+  "games": 40,
+  "wins": 13,
+  "draws": 12,
+  "losses": 15,
+  "score": 0.475,
+  "terminations": {
+    "checkmate": 28,
+    "threefold_repetition": 12
+  },
+  "results": [
+    {
+      "index": 1,
+      "pgn_file": "game-01.pgn",
+      "agent_color": "white",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 86
+    },
+    {
+      "index": 2,
+      "pgn_file": "game-02.pgn",
+      "agent_color": "black",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 145
+    },
+    {
+      "index": 3,
+      "pgn_file": "game-03.pgn",
+      "agent_color": "white",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 171
+    },
+    {
+      "index": 4,
+      "pgn_file": "game-04.pgn",
+      "agent_color": "black",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 129
+    },
+    {
+      "index": 5,
+      "pgn_file": "game-05.pgn",
+      "agent_color": "white",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 21
+    },
+    {
+      "index": 6,
+      "pgn_file": "game-06.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 131
+    },
+    {
+      "index": 7,
+      "pgn_file": "game-07.pgn",
+      "agent_color": "white",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 130
+    },
+    {
+      "index": 8,
+      "pgn_file": "game-08.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 92
+    },
+    {
+      "index": 9,
+      "pgn_file": "game-09.pgn",
+      "agent_color": "white",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 106
+    },
+    {
+      "index": 10,
+      "pgn_file": "game-10.pgn",
+      "agent_color": "black",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 26
+    },
+    {
+      "index": 11,
+      "pgn_file": "game-11.pgn",
+      "agent_color": "white",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 207
+    },
+    {
+      "index": 12,
+      "pgn_file": "game-12.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 103
+    },
+    {
+      "index": 13,
+      "pgn_file": "game-13.pgn",
+      "agent_color": "white",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 114
+    },
+    {
+      "index": 14,
+      "pgn_file": "game-14.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 75
+    },
+    {
+      "index": 15,
+      "pgn_file": "game-15.pgn",
+      "agent_color": "white",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 147
+    },
+    {
+      "index": 16,
+      "pgn_file": "game-16.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 85
+    },
+    {
+      "index": 17,
+      "pgn_file": "game-17.pgn",
+      "agent_color": "white",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 126
+    },
+    {
+      "index": 18,
+      "pgn_file": "game-18.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 110
+    },
+    {
+      "index": 19,
+      "pgn_file": "game-19.pgn",
+      "agent_color": "white",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 94
+    },
+    {
+      "index": 20,
+      "pgn_file": "game-20.pgn",
+      "agent_color": "black",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 181
+    },
+    {
+      "index": 21,
+      "pgn_file": "game-21.pgn",
+      "agent_color": "white",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 94
+    },
+    {
+      "index": 22,
+      "pgn_file": "game-22.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 74
+    },
+    {
+      "index": 23,
+      "pgn_file": "game-23.pgn",
+      "agent_color": "white",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 110
+    },
+    {
+      "index": 24,
+      "pgn_file": "game-24.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 152
+    },
+    {
+      "index": 25,
+      "pgn_file": "game-25.pgn",
+      "agent_color": "white",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 112
+    },
+    {
+      "index": 26,
+      "pgn_file": "game-26.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 100
+    },
+    {
+      "index": 27,
+      "pgn_file": "game-27.pgn",
+      "agent_color": "white",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 154
+    },
+    {
+      "index": 28,
+      "pgn_file": "game-28.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 89
+    },
+    {
+      "index": 29,
+      "pgn_file": "game-29.pgn",
+      "agent_color": "white",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 77
+    },
+    {
+      "index": 30,
+      "pgn_file": "game-30.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 39
+    },
+    {
+      "index": 31,
+      "pgn_file": "game-31.pgn",
+      "agent_color": "white",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 66
+    },
+    {
+      "index": 32,
+      "pgn_file": "game-32.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 102
+    },
+    {
+      "index": 33,
+      "pgn_file": "game-33.pgn",
+      "agent_color": "white",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 56
+    },
+    {
+      "index": 34,
+      "pgn_file": "game-34.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 98
+    },
+    {
+      "index": 35,
+      "pgn_file": "game-35.pgn",
+      "agent_color": "white",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 147
+    },
+    {
+      "index": 36,
+      "pgn_file": "game-36.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 65
+    },
+    {
+      "index": 37,
+      "pgn_file": "game-37.pgn",
+      "agent_color": "white",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 107
+    },
+    {
+      "index": 38,
+      "pgn_file": "game-38.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 146
+    },
+    {
+      "index": 39,
+      "pgn_file": "game-39.pgn",
+      "agent_color": "white",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 96
+    },
+    {
+      "index": 40,
+      "pgn_file": "game-40.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 48
+    }
+  ]
+}

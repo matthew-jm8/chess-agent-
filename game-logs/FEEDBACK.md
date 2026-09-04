@@ -130,3 +130,86 @@ Depth 4 was re-tried with ordering in place (hoping the speedup would make it sa
 flagged 7/10 games at fast control — worse than depth 3 ever was — so it stays out until real
 time management (A4) exists. `DEPTH = 3` remains the setting, but is now meaningfully stronger
 and safer at the same depth than before this milestone.
+
+## Milestone A3 — transposition table
+
+Added a proper TT (`EXACT`/`LOWERBOUND`/`UPPERBOUND` flags, not a naive "always trust the
+cache" version — see the code comment block in `agent.py` for why that distinction matters for
+correctness, not just speed). Sanity-checked first: still returns only legal moves across a
+mainline position, a busy middlegame position, and a bare king+pawn endgame; TT populated with
+1,234 / 1,787 / 46 entries respectively on those single calls.
+
+**Depth 4, third attempt** (previously ruled out in A1 without ordering, and in A2 with ordering
+alone):
+
+| Depth | Middlegame move time (cold TT) |
+|---|---|
+| 3 | 0.193s |
+| 4 | 0.973s (down from 1.427s in A2 - ordering + TT together, real improvement) |
+
+| Depth | Opponent | Clock | Score | Record | Flags |
+|---|---|---|---|---|---|
+| 4 + ordering + TT | `baselines/greedy` | fast (10s+0.1s) | 30.0% | +3 =0 -7 | 6/10 |
+
+**Still not safe.** Better than A2's depth-4 attempt in raw timing, but the flag rate barely
+moved (7/10 → 6/10) — `DEPTH` stays at 3. Real time management (A4) remains the actual fix; no
+depth increase is going to be safe against a clock the search doesn't check.
+
+**Head-to-head vs `versions/v2-ordering`, depth 3 (both versions) — a real scare, then a lesson:**
+
+A first batch of 10 games came back **25.0%** (+1 =3 -6) — alarming, since a *correctly*
+implemented TT should never make an engine play worse at a fixed, equal depth, only faster (it
+doesn't change what gets searched, only how much redundant work is skipped). Before accepting
+that number, verified directly: computed every one of the ~30 legal root moves' scores for both
+versions on the exact position where their final move choices had diverged. **Every score
+matched exactly** between v2 and v3, including the full set of moves tied for best (10 different
+moves tied at the same score in that position) — proof the TT logic itself is correct, not
+subtly corrupting the search.
+
+With move-scoring ties that common at this depth/evaluation coarseness, the *actual* move played
+among tied options comes down to random tie-breaking, which is independent per process/game —
+meaning two functionally-identical engines can produce a lopsided-looking small-sample record
+purely by chance. Re-ran at 40 games to check:
+
+| Games | Score | Record |
+|---|---|---|
+| 10 | 25.0% | +1 =3 -6 |
+| 40 | **47.5%** | +13 =12 -15 |
+
+47.5% at 40 games is a statistical coin flip — confirms the TT is exactly what it should be:
+**strength-neutral, purely a speed optimization at this fixed depth.** This is `docs/IDEAS.md`'s
+"two games tell you nothing" warning realized directly: the 10-game sample alone would have
+wrongly suggested shipping a regression.
+
+**vs baselines, fast control (10s+0.1s):**
+
+| Opponent | Score | Record | Flags |
+|---|---|---|---|
+| `baselines/greedy` | 90.0% | +9 =0 -1 | 0/10 |
+| `baselines/minimax` | 65.0% | +4 =5 -1 | 1/10 |
+
+Both within normal sample-to-sample variance of A2's numbers (95.0%/0 flags and 70.0%/0 flags
+respectively) — consistent with the head-to-head finding above: TT isn't meaningfully changing
+strength at this fixed depth, small-sample noise explains the wobble either way.
+
+**Competition-clock sanity check (120s+0.5s):**
+
+| Opponent | Score | Record | Flags |
+|---|---|---|---|
+| `baselines/minimax` | 66.7% | +2 =4 -0 | 0/6 |
+
+Identical to A2's result on this exact matchup/clock (66.7%, +2 =4 -0, 0/6 flags) — about as
+clean a confirmation as it gets that this milestone changed speed and safety margin, not
+playing strength.
+
+### A3 summary
+
+Depth 4 remains unsafe even with TT added on top of ordering (6/10 flags, barely better than
+A2's 7/10) — `DEPTH` stays at 3. The TT itself is implemented correctly (verified by direct
+move-by-move score comparison against v2, not just game outcomes) and is strength-neutral at
+this fixed depth, exactly as a correct transposition table should be — its value is real but
+currently invisible in these numbers: faster computation per position (freeing up time-budget
+headroom for milestone A4) and cross-move memory that will matter more once search gets deeper
+or slower components (like B1's numba evaluation) are added. The 10-vs-40-game discrepancy in
+the head-to-head (25.0% → 47.5%) is this milestone's best concrete lesson in why
+`docs/IDEAS.md` insists on real sample sizes before trusting a result.

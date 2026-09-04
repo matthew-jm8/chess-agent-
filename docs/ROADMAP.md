@@ -36,8 +36,8 @@ baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
 | A0 | GitHub Actions CI (Linux + Apple Silicon runners) | ✅ done, passing |
 | A1 | Alpha-beta negamax search, fixed depth | ✅ done — see below |
 | A2 | Move ordering (MVV-LVA) | ✅ done — see below |
-| A3 | Transposition table | ⬜ next |
-| A4 | Iterative deepening + real time management | ⬜ planned |
+| A3 | Transposition table | ✅ done — see below |
+| A4 | Iterative deepening + real time management | ⬜ next |
 | A5 | Quiescence search | ⬜ planned |
 | A6 | Evaluation upgrade: piece-square tables | ⬜ planned |
 | B0 | Full env parity on Silicon Mac (torch/numba/onnxruntime) | ⬜ blocked on hardware |
@@ -80,9 +80,11 @@ alpha-beta actually pay off ("the gap ... is mostly move ordering"). Hoped to le
 back toward 4 safely — it didn't (still flagged at depth 4), but made depth 3 dramatically
 stronger and safer instead. See below.
 
-**A3. Transposition table** — a dict keyed on `board._transposition_key()`, storing at minimum
-depth + score. Persisting it across moves within a game (not just within one search) is a real
-gain, since the process stays alive between `get_move` calls.
+**A3. Transposition table** *(done)* — a dict keyed on `board._transposition_key()`, storing
+depth + score + a bound-type flag (proper EXACT/LOWERBOUND/UPPERBOUND handling, not a naive
+always-trust-the-cache version). Persists across moves within a game, since the process stays
+alive between `get_move` calls. Strength-neutral at this fixed depth (as a correct TT should
+be) — its value here is speed and cross-move memory, not different move choices. See below.
 
 **A4. Iterative deepening + real time management** — replace fixed depth with iterative
 deepening (depth 1, 2, 3, ... keeping the best move from each pass), driven by a real budget
@@ -179,3 +181,30 @@ v1 itself flagged at the *same* depth — direct evidence ordering buys real spe
 pruning), not just better move choices. The minimax flag rate in particular, the worst problem
 found in A1, dropped from 5/10 to 0/10. Full data: `game-logs/v2-ordering-vs-*/`, written up in
 `game-logs/FEEDBACK.md`.
+
+### A3 — Transposition table
+
+Added a proper TT with EXACT/LOWERBOUND/UPPERBOUND flag handling (not a naive cache) — see the
+code comments in `agent.py` for why that distinction matters for correctness, not just speed.
+Depth 4 was re-tried a third time (ordering + TT together) hoping the combined speedup made it
+safe: it didn't (6/10 flags at fast control, barely better than A2's 7/10) — `DEPTH` stays at 3.
+
+**A real scare, resolved properly rather than assumed away:** a 10-game head-to-head against
+`versions/v2-ordering` (identical depth, ordering unchanged, only the TT added) came back 25.0%
+— alarming, since a *correct* TT should never make an engine play worse at a fixed depth, only
+faster. Verified directly rather than guessing: computed every legal root move's score for both
+versions on the position where their final choices diverged, and every score matched exactly
+(all ~30 moves, including a 10-way tie for best) — proof the TT logic itself is sound. With that
+many ties at this depth, small-sample tie-breaking noise was the real explanation. Re-ran at 40
+games:
+
+| Games | Score | Record |
+|---|---|---|
+| 10 | 25.0% | +1 =3 -6 |
+| 40 | 47.5% | +13 =12 -15 |
+
+47.5% at real sample size is a coin flip — confirms the TT is exactly what it should be:
+strength-neutral at this fixed depth, a speed optimization only. Baseline results held steady
+too (90.0%/0 flags vs `greedy`, 65.0%/1 flag and 66.7%/0 flags vs `minimax` at fast/competition
+clock respectively — all within normal variance of A2's numbers). Full data:
+`game-logs/v3-tt-vs-*/`, written up in `game-logs/FEEDBACK.md`.

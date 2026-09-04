@@ -1,0 +1,109 @@
+{
+  "label": "v3-tt-depth4-vs-greedy",
+  "agent": ".",
+  "opponent": "baselines/greedy",
+  "clock": "fast test clock (10s+0.1s)",
+  "base_ms": 10000,
+  "increment_ms": 100,
+  "games": 10,
+  "wins": 3,
+  "draws": 0,
+  "losses": 7,
+  "score": 0.3,
+  "terminations": {
+    "checkmate": 4,
+    "flag": 6
+  },
+  "results": [
+    {
+      "index": 1,
+      "pgn_file": "game-01.pgn",
+      "agent_color": "white",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 21
+    },
+    {
+      "index": 2,
+      "pgn_file": "game-02.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "flag",
+      "score_for_agent": "loss",
+      "plies": 35
+    },
+    {
+      "index": 3,
+      "pgn_file": "game-03.pgn",
+      "agent_color": "white",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 72
+    },
+    {
+      "index": 4,
+      "pgn_file": "game-04.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 42
+    },
+    {
+      "index": 5,
+      "pgn_file": "game-05.pgn",
+      "agent_color": "white",
+      "result": "black",
+      "termination": "flag",
+      "score_for_agent": "loss",
+      "plies": 108
+    },
+    {
+      "index": 6,
+      "pgn_file": "game-06.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "flag",
+      "score_for_agent": "loss",
+      "plies": 29
+    },
+    {
+      "index": 7,
+      "pgn_file": "game-07.pgn",
+      "agent_color": "white",
+      "result": "black",
+      "termination": "flag",
+      "score_for_agent": "loss",
+      "plies": 38
+    },
+    {
+      "index": 8,
+      "pgn_file": "game-08.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "flag",
+      "score_for_agent": "loss",
+      "plies": 17
+    },
+    {
+      "index": 9,
+      "pgn_file": "game-09.pgn",
+      "agent_color": "white",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 45
+    },
+    {
+      "index": 10,
+      "pgn_file": "game-10.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "flag",
+      "score_for_agent": "loss",
+      "plies": 55
+    }
+  ]
+}
