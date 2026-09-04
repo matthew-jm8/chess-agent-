@@ -1,0 +1,47 @@
+# --- Python bytecode / caches ---
+__pycache__/
+*.py[cod]
+*.pyo
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Packaging / build artifacts ---
+build/
+dist/
+*.egg-info/
+
+# --- Testing / tooling caches ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- uv (package manager) ---
+# uv.lock is intentionally NOT ignored - it pins exact dependency versions.
+
+# --- Environment / secrets ---
+.env
+.env.*
+
+# --- OS cruft ---
+.DS_Store
+
+# --- Editor/IDE ---
+.vscode/
+.idea/
+
+# --- Model weights / large files ---
+# Small ONNX exports are fine to commit; ignore common large-weight formats
+# and anything explicitly named "large". Un-ignore individual files with
+# `git add -f <file>` if you deliberately want one tracked.
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+*large*.onnx
+
+# --- Logs / harness output ---
+*.log
