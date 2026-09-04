@@ -35,8 +35,8 @@ baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
 | Setup | Fork starter, working random-mover, git/GitHub backup | ✅ done |
 | A0 | GitHub Actions CI (Linux + Apple Silicon runners) | ✅ done, passing |
 | A1 | Alpha-beta negamax search, fixed depth | ✅ done — see below |
-| A2 | Move ordering (MVV-LVA) | ⬜ next |
-| A3 | Transposition table | ⬜ planned |
+| A2 | Move ordering (MVV-LVA) | ✅ done — see below |
+| A3 | Transposition table | ⬜ next |
 | A4 | Iterative deepening + real time management | ⬜ planned |
 | A5 | Quiescence search | ⬜ planned |
 | A6 | Evaluation upgrade: piece-square tables | ⬜ planned |
@@ -74,10 +74,11 @@ needing local hardware that supports them.
 alpha-beta pruning, reusing `baselines/minimax`'s exact evaluation (material + mobility,
 unchanged) so the comparison isolates what the search algorithm alone buys.
 
-**A2. Move ordering (MVV-LVA)** — order captures before quiet moves, captures sorted by
+**A2. Move ordering (MVV-LVA)** *(done)* — order captures before quiet moves, captures sorted by
 most-valuable-victim/least-valuable-attacker. Per `docs/IDEAS.md` this is the lever that makes
-alpha-beta actually pay off ("the gap ... is mostly move ordering"). Expected to let us push
-depth back toward 4 safely.
+alpha-beta actually pay off ("the gap ... is mostly move ordering"). Hoped to let us push depth
+back toward 4 safely — it didn't (still flagged at depth 4), but made depth 3 dramatically
+stronger and safer instead. See below.
 
 **A3. Transposition table** — a dict keyed on `board._transposition_key()`, storing at minimum
 depth + score. Persisting it across moves within a game (not just within one search) is a real
@@ -152,4 +153,29 @@ requirement before any version of this agent ships, and that fast-control volume
 safe to rely on until A4 lands. A 58.3% score against `minimax` (not a rout) also shows depth 3
 alone hasn't fully recovered what we gave up dropping from depth 4 — move ordering (A2) is what
 should buy that back. Full data: `game-logs/v1-alphabeta-vs-*/`, written up in
+`game-logs/FEEDBACK.md`.
+
+### A2 — Move ordering (MVV-LVA)
+
+Added `order_moves()`: captures before quiet moves, captures ranked by MVV-LVA. Found and fixed
+a real bug along the way — a king capturing something crashed the ordering function, since
+`PIECE_VALUE` (reused from the evaluation) has no king entry; fixed with a separate
+`ATTACKER_VALUE` table used only for ordering.
+
+Re-tried depth 4 hoping the speedup would make it viable — it didn't (7/10 flags at fast
+control, worse than depth 3 ever was) — so `DEPTH` stayed at 3. But ordering made depth 3 itself
+dramatically better:
+
+| Metric | A1 (no ordering) | A2 (with ordering) |
+|---|---|---|
+| vs `versions/v1-alphabeta`, head-to-head | — | 100.0% (+10 =0 -0) |
+| vs `greedy`, fast clock | 85.0%, 1/10 flags | 95.0%, 0/10 flags |
+| vs `minimax`, fast clock | 20.0%, 5/10 flags | 70.0%, 0/10 flags |
+| vs `minimax`, competition clock | 58.3%, 0/6 flags | 66.7%, 0/6 flags |
+| Middlegame move time (depth 3) | 1.014s | 0.209s (~5x faster) |
+
+The head-to-head against `v1-alphabeta` is the cleanest signal: 100%, including 3 games where
+v1 itself flagged at the *same* depth — direct evidence ordering buys real speed (better
+pruning), not just better move choices. The minimax flag rate in particular, the worst problem
+found in A1, dropped from 5/10 to 0/10. Full data: `game-logs/v2-ordering-vs-*/`, written up in
 `game-logs/FEEDBACK.md`.

@@ -21,16 +21,23 @@ PIECE_VALUE = {
 MOBILITY_WEIGHT = 4.0
 MATE = 1e6
 
+# For scoring the *attacker* side of a capture (order_moves, below). PIECE_VALUE has no entry
+# for the king - it isn't material to count in the evaluation - but a king can capture, so
+# ordering needs a value for it too. Giving it the largest value here (deliberately separate
+# from PIECE_VALUE, not a real material worth) means "the king did the capturing" sorts last
+# among captures of the same victim, which is what MVV-LVA intends: prefer capturing with the
+# least valuable attacker.
+ATTACKER_VALUE = {**PIECE_VALUE, chess.KING: 10_000.0}
+
 # Total plies searched from the root. baselines/minimax searches 2 (fixed, no pruning).
 #
-# Measured on this machine: depth 4 took ~2.2s on a fairly ordinary middlegame position
-# (no move ordering yet, so alpha-beta prunes far less than it eventually will - see
-# docs/IDEAS.md: "alpha-beta only pays off when good moves come first"). A handful of moves
-# like that blows a 10s fast-control clock entirely, which is exactly what happened: an
-# arena run at depth 4 lost all 20 games by flagging. Depth 3 measured ~4x faster and
-# survives fast-control testing. This is a stopgap, not a fix - there is still no time
-# management (milestone A4) or move ordering (milestone A2) to make depth 4+ safe, so this
-# number goes back up once those land.
+# History: depth 4 with no move ordering took ~2.2s on an ordinary middlegame move and lost
+# 20/20 fast-control games by flagging (milestone A1). Adding MVV-LVA move ordering (this
+# milestone, A2) cut that same middlegame move to ~1.4s at depth 4 and ~0.2s at depth 3 - a
+# big win, but depth 4 still isn't safe: a batch at depth 4 with ordering still flagged 7/10
+# games at fast control. Depth 3 stays for now. This is still a stopgap, not a fix - there is
+# still no time management (milestone A4), so this number goes back up once that lands and the
+# clock itself decides how deep to search instead of a fixed constant guessing at it.
 DEPTH = 3
 
 
@@ -42,6 +49,35 @@ def evaluate(board: chess.Board, mobility: int) -> float:
         for piece, value in PIECE_VALUE.items()
     )
     return material + MOBILITY_WEIGHT * mobility
+
+
+def order_moves(board: chess.Board, moves: list[chess.Move]) -> list[chess.Move]:
+    """Captures first, best captures first (MVV-LVA); quiet moves keep their given order.
+
+    Alpha-beta only prunes once it has already found a move good enough to trigger a cutoff -
+    so the earlier a strong move is tried, the more of the tree gets skipped. Captures are the
+    moves most likely to be strong, and MVV-LVA (most-valuable-victim, least-valuable-attacker)
+    orders them the way a human would scan a position first: capturing a queen with a pawn
+    before capturing a pawn with a queen. See docs/IDEAS.md: "the gap between the minimax
+    baseline and something respectable is mostly move ordering."
+    """
+
+    def score(move: chess.Move) -> float:
+        if not board.is_capture(move):
+            return -1.0  # quiet moves sort after every capture
+        attacker = board.piece_at(move.from_square)
+        assert attacker is not None
+        if board.is_en_passant(move):
+            # The captured pawn isn't on move.to_square in this one case, so piece_at there
+            # would wrongly see an empty square - the victim is always a pawn here regardless.
+            victim_value = PIECE_VALUE[chess.PAWN]
+        else:
+            victim = board.piece_at(move.to_square)
+            assert victim is not None
+            victim_value = PIECE_VALUE[victim.piece_type]
+        return victim_value * 100 - ATTACKER_VALUE[attacker.piece_type]
+
+    return sorted(moves, key=score, reverse=True)
 
 
 def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
@@ -66,7 +102,7 @@ def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
         return evaluate(board, len(moves))
 
     best = -math.inf
-    for move in moves:
+    for move in order_moves(board, moves):
         board.push(move)
         score = -negamax(board, depth - 1, -beta, -alpha)
         board.pop()
@@ -100,7 +136,7 @@ def get_move(fen: str, time_left_ms: int) -> str:
     best_score = -math.inf
     best_moves: list[chess.Move] = []
     alpha, beta = -math.inf, math.inf
-    for move in board.legal_moves:
+    for move in order_moves(board, list(board.legal_moves)):
         board.push(move)
         score = -negamax(board, DEPTH - 1, -beta, -alpha)
         board.pop()
