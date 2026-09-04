@@ -4,6 +4,14 @@ This is a starter for AI Chessathon, a chess-engine competition. The deliverable
 `agent.py`, exposing `get_move(fen, time_left_ms) -> str`. It gets zipped and uploaded, and the
 platform plays it against other people's agents on a fixed cadence.
 
+## Where things stand
+
+At the start of a session in this repo, before doing anything else, read `docs/ROADMAP.md`
+(milestone-by-milestone status and writeup) and `game-logs/FEEDBACK.md` (test data, bugs found,
+full numbers per batch) to pick up where the last session left off. Neither is read by
+`harness/package.py` - they're development history, not part of the submission - but they are
+the actual memory of this project between sessions, more so than this file.
+
 ## Read the rules from the source
 
 The competition rules and the agent contract live on the site and change. Fetch them before you
