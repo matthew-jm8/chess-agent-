@@ -450,3 +450,46 @@ holds steady with the 20-game number (85.0%).
 
 Also holds steady with the 30-game number (80.0%) - three losses appear at this larger sample
 (zero had shown up at 30 games) but the result stays clearly, comfortably positive either way.
+
+## Milestone B0 — full environment parity (Windows machine)
+
+New team member joining partway through, checking whether B0 (blocked on the original Intel
+Mac — no wheels for torch/onnxruntime/numba at the platform's pinned versions on that
+architecture) could be unblocked from a different machine. Cloned the repo fresh on Windows,
+installed `uv`, and ran a plain `uv sync` — deliberately not the `--no-install`/exclusion
+workaround the Mac had been using — to see whether this machine's wheels resolve cleanly.
+
+**Result: yes, full parity.** All 24 locked packages installed with no errors, including the
+three that had been blocked:
+
+| Package | Version installed | Pinned version | Match |
+|---|---|---|---|
+| torch | 2.13.0+cpu | 2.13.0 (CPU index) | ✅ |
+| numpy | 2.5.2 | 2.5.2 | ✅ |
+| numba | 0.67.0 | 0.67.0 | ✅ |
+| onnxruntime | 1.29.0 | 1.29.0 | ✅ |
+| chess (python-chess) | 1.11.2 | 1.11.2 | ✅ |
+
+Installed, not just resolved — confirmed each one actually imports and runs (not only that `uv`
+reported success): `import torch, onnxruntime, numba, numpy, chess` all succeeded, and
+`torch.zeros(3).sum().item()` returned `0.0`, so torch's CPU backend is functional, not just
+importable.
+
+`make gate` (ruff + mypy strict + 2 sanity games vs `baselines/random`) also ran clean on this
+machine:
+
+| Check | Result |
+|---|---|
+| `ruff check .` | All checks passed |
+| `mypy` (strict) | Success: no issues found in 9 source files |
+| 2 games vs `baselines/random`, 5s base | +2 =0 -0, both by checkmate, no flags |
+
+**Takeaway:** the B0 blocker was specific to the original Intel Mac's architecture, not to the
+pinned versions themselves being uninstallable everywhere — a plain Windows machine resolves and
+runs the full stack (including the ML/JIT packages) without the CI-only workaround. This doesn't
+replace getting the actual Apple Silicon Mac working (per `docs/ROADMAP.md`, that's still the
+target dev machine), but it means B1 (numba-jit) and B2 (the stretch-goal ONNX net) can now
+also be developed and tested from this Windows machine in the meantime, rather than waiting on
+the Silicon Mac alone. Full install/test log: this session's terminal output, not committed as a
+separate file (no PGNs beyond the two `make gate` sanity games, which aren't saved by the gate
+target itself).

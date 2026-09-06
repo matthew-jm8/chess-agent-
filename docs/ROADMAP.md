@@ -40,7 +40,7 @@ baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
 | A4 | Iterative deepening + real time management | ✅ done — see below |
 | A5 | Quiescence search | ✅ done — see below |
 | A6 | Evaluation upgrade: piece-square tables | ✅ done — see below |
-| B0 | Full env parity on Silicon Mac (torch/numba/onnxruntime) | ⬜ blocked on hardware |
+| B0 | Full env parity (torch/numba/onnxruntime) | ✅ done on Windows — see below; Silicon Mac still pending |
 | B1 | numba-jit the evaluation | ⬜ planned |
 | B2 | Neural-net evaluation (**stretch goal**, not required) | ⬜ optional |
 | C | Submission safety buffer (gate, edge cases, zip, smoke games) | ⬜ last 1-2 days |
@@ -105,8 +105,8 @@ neural net (B2) is actually worth shipping later. See below.
 
 ## Phase B — once on Apple Silicon hardware
 
-**B0. Full environment parity** — plain `uv sync` (no exclusions); confirm torch, onnxruntime,
-numba install cleanly; run `make gate`.
+**B0. Full environment parity** *(done, on a Windows machine — see below)* — plain `uv sync`
+(no exclusions); confirm torch, onnxruntime, numba install cleanly; run `make gate`.
 
 **B1. numba-jit the evaluation** — following `baselines/numba/agent.py`'s pattern exactly:
 encode board state into numpy arrays, `@njit` the hot evaluation function, warm it up once at
@@ -330,3 +330,23 @@ a wide margin rather than trading one off against the other. Directly confirms
 beats both baselines" — with actual numbers rather than taking it on faith. **Phase A (the
 classical engine) is now complete.** Full data: `game-logs/v6-pst-vs-*/`, written up in
 `game-logs/FEEDBACK.md`.
+
+### B0 — Full environment parity (Windows machine)
+
+A new team member joined partway through and, while getting set up, checked whether B0 could be
+unblocked from a machine other than the pending Silicon Mac. Cloned the repo on Windows,
+installed `uv`, and ran a plain `uv sync` (no `--no-install`/exclusion workaround) against the
+locked `uv.lock`.
+
+**Result:** all 24 locked packages installed cleanly, including the three previously blocked on
+the Intel Mac — `torch==2.13.0+cpu`, `onnxruntime==1.29.0`, `numba==0.67.0` — alongside
+`numpy==2.5.2` and `chess==1.11.2`. Verified they actually import and run, not just install
+(`torch.zeros(3).sum().item()` returns `0.0`). `make gate` also passed cleanly: ruff clean,
+mypy strict clean (9 source files), and 2/2 sanity games vs `baselines/random` finished by
+checkmate with no flags. Full numbers in `game-logs/FEEDBACK.md`.
+
+**Note:** this confirms the pinned versions install fine on at least one non-Mac architecture —
+it does not by itself fix the Intel Mac (still no wheels for that arch at these versions) or
+replace getting the Silicon Mac working, which remains the target dev machine per the hardware
+note at the top of this doc. In the meantime, B1 and B2 work can proceed on this Windows
+machine.
