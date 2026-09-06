@@ -11,9 +11,9 @@ import chess
 # Import time runs once per game, inside a 60 second budget, before your clock starts.
 # Load weights and build tables out here, not inside get_move.
 
-# Same evaluation as baselines/minimax, unchanged on purpose: this milestone is about the
-# search algorithm (alpha-beta pruning, extra depth), not the evaluation. Comparing this
-# agent to baselines/minimax in an arena isolates exactly what alpha-beta buys us.
+# Material values, unchanged since baselines/minimax (milestone A1). Piece-square tables
+# (milestone A6, below) add a positional term on top of this; material itself stays as-is so
+# the comparison isolates what positional understanding alone is worth.
 PIECE_VALUE = {
     chess.PAWN: 100.0,
     chess.KNIGHT: 320.0,
@@ -137,6 +137,131 @@ def store_tt(key: Hashable, depth: int, score: float, flag: int) -> None:
     TT[key] = TTEntry(depth, score, flag)
 
 
+# --- Piece-square tables (milestone A6) ---
+#
+# Material alone treats every knight as worth the same 320 points regardless of where it
+# stands, but a knight in the corner covers 2 squares and one in the center covers 8 - they
+# are not actually equal. A piece-square table is just a lookup of a bonus/penalty per square
+# for a given piece type, added on top of material. These are the widely-used "Simplified
+# Evaluation Function" tables (Tomasz Michniewski, published on the Chess Programming Wiki as
+# an openly-shared educational reference, not any engine's proprietary weights) - a real,
+# well-tested starting point rather than a from-scratch guess at 384 numbers.
+#
+# Written below in the usual published form: 8 rows of a8..h8 down to a1..h1, White's
+# perspective. That's the opposite order from how python-chess numbers squares (0=a1 up to
+# 63=h8), so _to_square_indexed reverses the row order once at import time rather than
+# hand-transcribing every table into an unfamiliar order (error-prone for 6 tables of 64
+# numbers each, and much harder to check by eye against the published version).
+def _to_square_indexed(rank8_to_rank1: list[float]) -> list[float]:
+    rows = [rank8_to_rank1[i : i + 8] for i in range(0, 64, 8)]
+    return [value for row in reversed(rows) for value in row]
+
+
+_PAWN_PST = _to_square_indexed(
+    [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        50, 50, 50, 50, 50, 50, 50, 50,
+        10, 10, 20, 30, 30, 20, 10, 10,
+        5, 5, 10, 25, 25, 10, 5, 5,
+        0, 0, 0, 20, 20, 0, 0, 0,
+        5, -5, -10, 0, 0, -10, -5, 5,
+        5, 10, 10, -20, -20, 10, 10, 5,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    ]
+)
+_KNIGHT_PST = _to_square_indexed(
+    [
+        -50, -40, -30, -30, -30, -30, -40, -50,
+        -40, -20, 0, 0, 0, 0, -20, -40,
+        -30, 0, 10, 15, 15, 10, 0, -30,
+        -30, 5, 15, 20, 20, 15, 5, -30,
+        -30, 0, 15, 20, 20, 15, 0, -30,
+        -30, 5, 10, 15, 15, 10, 5, -30,
+        -40, -20, 0, 5, 5, 0, -20, -40,
+        -50, -40, -30, -30, -30, -30, -40, -50,
+    ]
+)
+_BISHOP_PST = _to_square_indexed(
+    [
+        -20, -10, -10, -10, -10, -10, -10, -20,
+        -10, 0, 0, 0, 0, 0, 0, -10,
+        -10, 0, 5, 10, 10, 5, 0, -10,
+        -10, 5, 5, 10, 10, 5, 5, -10,
+        -10, 0, 10, 10, 10, 10, 0, -10,
+        -10, 10, 10, 10, 10, 10, 10, -10,
+        -10, 5, 0, 0, 0, 0, 5, -10,
+        -20, -10, -10, -10, -10, -10, -10, -20,
+    ]
+)
+_ROOK_PST = _to_square_indexed(
+    [
+        0, 0, 0, 0, 0, 0, 0, 0,
+        5, 10, 10, 10, 10, 10, 10, 5,
+        -5, 0, 0, 0, 0, 0, 0, -5,
+        -5, 0, 0, 0, 0, 0, 0, -5,
+        -5, 0, 0, 0, 0, 0, 0, -5,
+        -5, 0, 0, 0, 0, 0, 0, -5,
+        -5, 0, 0, 0, 0, 0, 0, -5,
+        0, 0, 0, 5, 5, 0, 0, 0,
+    ]
+)
+_QUEEN_PST = _to_square_indexed(
+    [
+        -20, -10, -10, -5, -5, -10, -10, -20,
+        -10, 0, 0, 0, 0, 0, 0, -10,
+        -10, 0, 5, 5, 5, 5, 0, -10,
+        -5, 0, 5, 5, 5, 5, 0, -5,
+        0, 0, 5, 5, 5, 5, 0, -5,
+        -10, 5, 5, 5, 5, 5, 0, -10,
+        -10, 0, 5, 0, 0, 0, 0, -10,
+        -20, -10, -10, -5, -5, -10, -10, -20,
+    ]
+)
+# Middlegame-shaped only (rewards staying tucked behind pawns): a fully correct engine blends
+# this with a separate endgame table that instead rewards an active, centralized king once
+# material thins out. Not doing that game-phase detection is a deliberate simplification for
+# this milestone - the king table below is used for the whole game, not just the middlegame.
+_KING_PST = _to_square_indexed(
+    [
+        -30, -40, -40, -50, -50, -40, -40, -30,
+        -30, -40, -40, -50, -50, -40, -40, -30,
+        -30, -40, -40, -50, -50, -40, -40, -30,
+        -30, -40, -40, -50, -50, -40, -40, -30,
+        -20, -30, -30, -40, -40, -30, -30, -20,
+        -10, -20, -20, -20, -20, -20, -20, -10,
+        20, 20, 0, 0, 0, 0, 20, 20,
+        20, 30, 10, 0, 0, 10, 30, 20,
+    ]
+)
+
+PST = {
+    chess.PAWN: _PAWN_PST,
+    chess.KNIGHT: _KNIGHT_PST,
+    chess.BISHOP: _BISHOP_PST,
+    chess.ROOK: _ROOK_PST,
+    chess.QUEEN: _QUEEN_PST,
+    chess.KING: _KING_PST,
+}
+
+
+def positional(board: chess.Board, mover: chess.Color) -> float:
+    """Sum each piece's square bonus, from the mover's perspective (their own pieces add,
+    the opponent's subtract - same sign convention as the material term in evaluate()).
+
+    The tables above are all written for White. A Black piece looks up the *mirrored* square
+    (chess.square_mirror flips a square vertically, e.g. a1<->a8) rather than needing a
+    second set of tables - the board is symmetric, so White's "knight on d4 is strong" is
+    exactly Black's "knight on d5 is strong".
+    """
+    total = 0.0
+    for square, piece in board.piece_map().items():
+        table = PST[piece.piece_type]
+        table_square = square if piece.color == chess.WHITE else chess.square_mirror(square)
+        bonus = table[table_square]
+        total += bonus if piece.color == mover else -bonus
+    return total
+
+
 def evaluate(board: chess.Board, mobility: int) -> float:
     """Score a position from the side-to-move's perspective: positive is good for them."""
     mover = board.turn
@@ -144,7 +269,7 @@ def evaluate(board: chess.Board, mobility: int) -> float:
         value * (len(board.pieces(piece, mover)) - len(board.pieces(piece, not mover)))
         for piece, value in PIECE_VALUE.items()
     )
-    return material + MOBILITY_WEIGHT * mobility
+    return material + MOBILITY_WEIGHT * mobility + positional(board, mover)
 
 
 def order_moves(board: chess.Board, moves: list[chess.Move]) -> list[chess.Move]:

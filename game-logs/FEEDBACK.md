@@ -376,3 +376,62 @@ Zero flags across every batch. Verified directly (not just via game outcomes) th
 fixes the horizon effect it's meant to: a hanging-queen position scored only +16.0 by static
 eval alone, +692.0 once quiescence searched the recapture. Full data:
 `game-logs/v5-quiescence-vs-*/`.
+
+## Milestone A6 — evaluation upgrade: piece-square tables
+
+Added piece-square tables (bonus/penalty per square, per piece type) on top of the unchanged
+material + mobility terms - the well-known "Simplified Evaluation Function" tables (Tomasz
+Michniewski, an openly-published Chess Programming Wiki reference, not any engine's
+proprietary weights), reused as a tested starting point rather than guessed from scratch.
+`MOBILITY_WEIGHT` deliberately left untouched despite A5's finding that it can introduce real
+noise - changing two things in the eval at once would make it impossible to isolate what PST
+alone is worth; that finding remains an open, documented follow-up, not silently patched here.
+
+Verified the table transcription and square-mirroring directly before trusting any batch result
+(a lesson from A5): spot-checked known reference squares (pawn on d7 = +50, knight on a1 = -50,
+etc.) against the published table, and confirmed a mirror pair (White knight on d4 vs Black
+knight on d5) scores identically from each side's own perspective. King table is
+middlegame-only - no game-phase detection to blend in an endgame table that would reward an
+active, centralized king instead - a known, documented simplification.
+
+**Head-to-head vs `versions/v5-quiescence`, fast control (30 games):** 80.0% (+18 =12 -0), zero
+losses, zero flags. The cleanest result of any milestone so far - not a single game lost.
+
+**vs `baselines/greedy`, fast control (20 games):** 100.0% (+20 =0 -0) - a perfect score, up
+from A5's 97.5%.
+
+**vs `baselines/minimax`, fast control (20 games):** 85.0% (+15 =4 -1), up from A5's 72.5%.
+
+**vs `baselines/minimax`, competition clock (6 games):** 83.3% (+4 =2 -0), zero losses, zero
+flags - the best competition-clock result against minimax of any milestone so far.
+
+### A6 summary
+
+Piece-square tables are the strongest single-milestone result yet, and the first with zero
+losses in *both* the head-to-head and the fast-control baseline batch:
+
+| Opponent | Clock | Score | Record | Flags |
+|---|---|---|---|---|
+| `versions/v5-quiescence` | fast (10s+0.1s) | 80.0% | +18 =12 -0 | 0/30 |
+| `baselines/greedy` | fast (10s+0.1s) | 100.0% | +20 =0 -0 | 0/20 |
+| `baselines/minimax` | fast (10s+0.1s) | 85.0% | +15 =4 -1 | 0/20 |
+| `baselines/minimax` | competition (120s+0.5s) | 83.3% | +4 =2 -0 | 0/6 |
+
+Full vs-minimax progression across every milestone so far, fast and competition clock:
+
+| Milestone | Fast clock | Competition clock |
+|---|---|---|
+| A1 (alpha-beta) | 20.0% (5/10 flags) | 58.3% |
+| A2 (+ move ordering) | 70.0% (0/10 flags) | 66.7% |
+| A3 (+ transposition table) | 65.0% (1/10 flags) | 66.7% |
+| A4 (+ time management) | 57.5% (0/20 flags) | 58.3% |
+| A5 (+ quiescence search) | 72.5% (0/20 flags) | 66.7% |
+| A6 (+ piece-square tables) | **85.0%** (0/20 flags) | **83.3%** |
+
+Two things stand out reading this whole progression at once: A6 is a clear new high on both
+clocks, and it's also the first milestone to *improve on both clocks simultaneously and by a
+wide margin* rather than trading one off against the other (A4 dipped on both while adding pure
+safety; A2/A3/A5 improved fast-clock numbers more than competition-clock ones). Consistent with
+`docs/IDEAS.md`'s own framing: "material plus piece-square tables is a real evaluation and it
+beats both baselines" - now demonstrably true here, not just asserted. Full data:
+`game-logs/v6-pst-vs-*/`.

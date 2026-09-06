@@ -39,7 +39,7 @@ baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
 | A3 | Transposition table | ✅ done — see below |
 | A4 | Iterative deepening + real time management | ✅ done — see below |
 | A5 | Quiescence search | ✅ done — see below |
-| A6 | Evaluation upgrade: piece-square tables | ⬜ next |
+| A6 | Evaluation upgrade: piece-square tables | ✅ done — see below |
 | B0 | Full env parity on Silicon Mac (torch/numba/onnxruntime) | ⬜ blocked on hardware |
 | B1 | numba-jit the evaluation | ⬜ planned |
 | B2 | Neural-net evaluation (**stretch goal**, not required) | ⬜ optional |
@@ -98,9 +98,10 @@ where the static eval is measured mid-exchange. Shipped with a real fail-hard/fa
 initially, caught by a 0.0% batch result before it went anywhere near a real submission - fixed,
 this became the single biggest strength jump since move ordering (A2). See below.
 
-**A6. Evaluation upgrade** — material + piece-square tables (and mobility/king safety if time
-allows), on top of the now-solid search. This becomes the reference point for judging whether
-the stretch-goal neural net (B2) is actually worth shipping.
+**A6. Evaluation upgrade** *(done)* — material + piece-square tables on top of the now-solid
+search (mobility deliberately left as-is, isolating what PST alone is worth). The strongest
+single-milestone result yet, and the reference point for judging whether the stretch-goal
+neural net (B2) is actually worth shipping later. See below.
 
 ## Phase B — once on Apple Silicon hardware
 
@@ -286,3 +287,46 @@ fail-soft, matching the existing pattern exactly.
 Verified directly that quiescence fixes the horizon effect it targets: a hanging-queen position
 scored only +16.0 by static evaluation alone, and +692.0 once quiescence searched the recapture.
 Full data: `game-logs/v5-quiescence-vs-*/`, written up in `game-logs/FEEDBACK.md`.
+
+### A6 — Evaluation upgrade: piece-square tables
+
+Added the widely-used "Simplified Evaluation Function" piece-square tables (Tomasz Michniewski,
+an openly-published Chess Programming Wiki reference — not any engine's proprietary weights) on
+top of the unchanged material + mobility terms. `MOBILITY_WEIGHT` deliberately left as-is
+despite A5's finding that it can introduce real noise — changing two things in the evaluation at
+once would make it impossible to isolate what PST alone buys; that finding remains an open
+follow-up. King table is middlegame-only (no game-phase detection to blend in an endgame table
+rewarding an active, centralized king) — a known, documented simplification.
+
+Learned from A5's bug: verified the table transcription and square-mirroring *before* trusting
+any batch result, not after. Spot-checked known reference squares against the published table
+(pawn on d7 = +50, knight on a1 = -50, etc.) and confirmed a mirror pair — White knight on d4 vs
+Black knight on d5 — scores identically from each side's own perspective.
+
+**The strongest single-milestone result yet, and the first with zero losses in both the
+head-to-head and a fast-control baseline batch:**
+
+| Opponent | Clock | Score | Record | Flags |
+|---|---|---|---|---|
+| `versions/v5-quiescence` | fast (10s+0.1s) | 80.0% | +18 =12 -0 | 0/30 |
+| `baselines/greedy` | fast (10s+0.1s) | 100.0% | +20 =0 -0 | 0/20 |
+| `baselines/minimax` | fast (10s+0.1s) | 85.0% | +15 =4 -1 | 0/20 |
+| `baselines/minimax` | competition (120s+0.5s) | 83.3% | +4 =2 -0 | 0/6 |
+
+Full vs-minimax progression across every milestone, both clocks:
+
+| Milestone | Fast clock | Competition clock |
+|---|---|---|
+| A1 (alpha-beta) | 20.0% (5/10 flags) | 58.3% |
+| A2 (+ move ordering) | 70.0% (0 flags) | 66.7% |
+| A3 (+ transposition table) | 65.0% (1 flag) | 66.7% |
+| A4 (+ time management) | 57.5% (0 flags) | 58.3% |
+| A5 (+ quiescence search) | 72.5% (0 flags) | 66.7% |
+| A6 (+ piece-square tables) | **85.0%** (0 flags) | **83.3%** |
+
+A6 is a clear new high on both clocks, and the first milestone to improve both simultaneously by
+a wide margin rather than trading one off against the other. Directly confirms
+`docs/IDEAS.md`'s own framing — "material plus piece-square tables is a real evaluation and it
+beats both baselines" — with actual numbers rather than taking it on faith. **Phase A (the
+classical engine) is now complete.** Full data: `game-logs/v6-pst-vs-*/`, written up in
+`game-logs/FEEDBACK.md`.
