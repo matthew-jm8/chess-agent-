@@ -38,8 +38,8 @@ baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
 | A2 | Move ordering (MVV-LVA) | ✅ done — see below |
 | A3 | Transposition table | ✅ done — see below |
 | A4 | Iterative deepening + real time management | ✅ done — see below |
-| A5 | Quiescence search | ⬜ next |
-| A6 | Evaluation upgrade: piece-square tables | ⬜ planned |
+| A5 | Quiescence search | ✅ done — see below |
+| A6 | Evaluation upgrade: piece-square tables | ⬜ next |
 | B0 | Full env parity on Silicon Mac (torch/numba/onnxruntime) | ⬜ blocked on hardware |
 | B1 | numba-jit the evaluation | ⬜ planned |
 | B2 | Neural-net evaluation (**stretch goal**, not required) | ⬜ optional |
@@ -92,8 +92,11 @@ driven by a real budget from `time_left_ms`, checked on every single search node
 bugs by measuring rather than guessing (a too-coarse clock-check interval, and an oversized
 safety margin that was silently capping the search at depth 2) — see below.
 
-**A5. Quiescence search** — captures-only extension at leaf nodes, fixing the horizon effect
-where the static eval is measured mid-exchange.
+**A5. Quiescence search** *(done)* — captures-only extension at leaf nodes (all legal replies
+when in check, not just captures - no "do nothing" option there), fixing the horizon effect
+where the static eval is measured mid-exchange. Shipped with a real fail-hard/fail-soft bug
+initially, caught by a 0.0% batch result before it went anywhere near a real submission - fixed,
+this became the single biggest strength jump since move ordering (A2). See below.
 
 **A6. Evaluation upgrade** — material + piece-square tables (and mobility/king safety if time
 allows), on top of the now-solid search. This becomes the reference point for judging whether
@@ -246,3 +249,40 @@ strength numbers roughly match the fixed-depth predecessor (expected: same depth
 the time, at this sample size and clock), but the real payoff is adaptivity and safety rather
 than a visible strength jump here — going deeper when the clock allows, never gambling when it
 doesn't. Full data: `game-logs/v4-timemgmt-vs-*/`, written up in `game-logs/FEEDBACK.md`.
+
+### A5 — Quiescence search
+
+Added a captures-only search extension at the horizon (`depth == 0`), with one correctness
+refinement beyond the minimal ask: when the side to move is in check, quiescence searches *all*
+legal replies, not just captures, and doesn't stand-pat — there is no "do nothing" option when in
+check, and the only legal move might not even be a capture.
+
+**A serious bug, caught the same way every previous one was — comparing scores directly rather
+than trusting a batch result.** A first 30-game head-to-head against `versions/v4-timemgmt` came
+back **0.0% (+0 =0 -30)**, every game lost by checkmate. Since a correct quiescence addition
+should never make the engine catastrophically worse, this got investigated immediately: compared
+every candidate move's score at the root of a specific diverging position, and found completely
+different moves — including one that plainly hangs a bishop — all scoring the *exact same* value,
+with the move actually being played (an early queen sortie) really one of the worst options on
+the board (-788.0), not the +100.0 it had been reported as.
+
+**Root cause**: `quiescence()` used `alpha` itself to hold "the best value found so far," instead
+of tracking a separate `best` the way `negamax` already correctly does (`alpha`/`beta` are only
+supposed to be pruning thresholds). Whenever a move failed to beat whatever alpha it happened to
+inherit from an earlier sibling, the function returned that borrowed alpha verbatim rather than
+the true value it had found — collapsing unrelated moves to identical scores. Fixed to be
+fail-soft, matching the existing pattern exactly.
+
+**After the fix — the single biggest strength jump since move ordering (A2):**
+
+| Opponent | Clock | Score | Record | Flags |
+|---|---|---|---|---|
+| `versions/v4-timemgmt`, broken (before the fix) | fast | 0.0% | +0 =0 -30 | 0/30 |
+| `versions/v4-timemgmt`, fixed | fast (10s+0.1s) | **85.0%** | +23 =5 -2 | 0/30 |
+| `baselines/greedy` | fast (10s+0.1s) | 97.5% | +19 =1 -0 | 0/20 |
+| `baselines/minimax` | fast (10s+0.1s) | 72.5% | +11 =7 -2 | 0/20 |
+| `baselines/minimax` | competition (120s+0.5s) | 66.7% | +3 =2 -1 | 0/6 |
+
+Verified directly that quiescence fixes the horizon effect it targets: a hanging-queen position
+scored only +16.0 by static evaluation alone, and +692.0 once quiescence searched the recapture.
+Full data: `game-logs/v5-quiescence-vs-*/`, written up in `game-logs/FEEDBACK.md`.

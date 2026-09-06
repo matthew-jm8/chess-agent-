@@ -300,3 +300,79 @@ strength jump (matching, not beating, the fixed-depth version at this sample siz
 this milestone's actual payoff is safety and adaptivity - going deeper when the clock allows,
 never gambling when it doesn't - which the numbers above don't fully capture at only 76 games and
 no fixed-depth agent ever actually flagging in this batch to demonstrate the difference against.
+
+## Milestone A5 — quiescence search
+
+Added captures-only search extension at the horizon (depth 0), with a real correctness
+refinement beyond the minimal ask: when the side to move is in check, quiescence searches *all*
+legal replies rather than only captures, and does not stand-pat (there is no "do nothing" option
+when in check). Verified against the case quiescence is meant to fix: a hanging-queen position
+scored only +16.0 by the static eval alone, but +692.0 once quiescence searched the recapture -
+exactly the kind of horizon-effect correction this milestone is for.
+
+**A serious bug, caught before it shipped by the same discipline as every previous milestone -
+comparing root move scores directly rather than trusting a batch result:** a first 30-game
+head-to-head against `versions/v4-timemgmt` came back **0.0% (+0 =0 -30)** - a complete loss,
+every game by checkmate. Since a correct quiescence addition should never make the engine
+*catastrophically* worse, this was investigated immediately rather than accepted. Traced a
+specific position where the two versions picked different moves at the same depth and compared
+every candidate move's score directly: multiple genuinely different moves - including one that
+plainly hangs a bishop - were all scoring the *exact same* value, and the move actually being
+played (an early queen sortie) turned out to be one of the worst options on the board (-788.0),
+not the +100.0 it had been reported as.
+
+**Root cause:** `quiescence()` used `alpha` itself to track "the best value found so far,"
+instead of tracking a separate `best` the way the rest of `negamax` correctly does (`alpha` is
+only supposed to be a pruning threshold). Whenever a move failed to beat whatever alpha it
+happened to inherit from an earlier sibling in the search order, the function returned that
+inherited alpha verbatim - not the true value it had actually found. Two completely different,
+differently-bad moves could both "fail low" against the same borrowed threshold and report
+identical scores, corrupting the root's ability to tell them apart. Fixed to be fail-soft,
+matching `negamax`'s existing pattern exactly: track `best` separately, use `alpha`/`beta` only
+for the cutoff decision, return `best`.
+
+**Re-verified after the fix**: the same position's root scores now differentiate correctly
+(the previously-tied moves spread from +100.0 down to -788.0, correctly ranking the queen
+sortie as the blunder it is). Re-ran the 30-game head-to-head:
+
+| Version | Score | Record | Flags |
+|---|---|---|---|
+| v5-quiescence, broken (fail-hard bug) | 0.0% | +0 =0 -30 | 0/30 |
+| v5-quiescence, fixed | **85.0%** | +23 =5 -2 | 0/30 |
+
+A complete turnaround, and the single biggest strength jump since move ordering (A2). Makes
+sense: quiescence directly targets real blunders at the search horizon (mistaking a mid-exchange
+position for the final result), so a *correct* implementation should be a substantial, visible
+improvement - which this now clearly is, once the bug was actually fixed rather than just
+"technically not crashing."
+
+**vs `baselines/greedy`, fast control (20 games):** 97.5% (+19 =1 -0), zero flags - matches A4
+exactly, no regression.
+
+**vs `baselines/minimax`, fast control (20 games):** 72.5% (+11 =7 -2), zero flags. Up from A4's
+57.5% - consistent with quiescence genuinely improving play quality, not just noise.
+
+**vs `baselines/minimax`, competition clock (6 games):** 66.7% (+3 =2 -1), zero flags - matches
+A2/A3's 66.7% on this exact matchup/clock, no regression.
+
+### A5 summary
+
+Quiescence search (captures-only extension at the leaves, with a proper in-check refinement -
+search all legal replies rather than only captures, and don't stand-pat, since there is no "do
+nothing" option when in check) is done, and it's the largest single improvement since move
+ordering (A2). It shipped with a real bug initially (fail-hard/fail-soft conflation making
+different moves score identically and once causing a queen to be hung outright) that a 0.0%
+head-to-head result caught immediately - fixed by matching `negamax`'s existing fail-soft
+pattern (track `best` separately from the pruning threshold `alpha`/`beta`).
+
+| Opponent | Clock | Score | Record | Flags |
+|---|---|---|---|---|
+| `versions/v4-timemgmt` | fast (10s+0.1s) | 85.0% | +23 =5 -2 | 0/30 |
+| `baselines/greedy` | fast (10s+0.1s) | 97.5% | +19 =1 -0 | 0/20 |
+| `baselines/minimax` | fast (10s+0.1s) | 72.5% | +11 =7 -2 | 0/20 |
+| `baselines/minimax` | competition (120s+0.5s) | 66.7% | +3 =2 -1 | 0/6 |
+
+Zero flags across every batch. Verified directly (not just via game outcomes) that quiescence
+fixes the horizon effect it's meant to: a hanging-queen position scored only +16.0 by static
+eval alone, +692.0 once quiescence searched the recapture. Full data:
+`game-logs/v5-quiescence-vs-*/`.

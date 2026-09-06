@@ -176,6 +176,64 @@ def order_moves(board: chess.Board, moves: list[chess.Move]) -> list[chess.Move]
     return sorted(moves, key=score, reverse=True)
 
 
+def quiescence(board: chess.Board, alpha: float, beta: float) -> float:
+    """Extend the search at the horizon through captures only, until the position "calms down"
+    (milestone A5). Without this, the main search's leaf evaluation can land exactly mid-trade -
+    right after losing a piece but before recapturing it - and the static eval would see "I just
+    lost a queen" and panic, when the position is actually fine once the exchange finishes.
+
+    "Stand pat": the side to move can always choose to make no more captures and accept the
+    current static score, so that score is a valid lower bound on this position's true value -
+    unless the side to move is in check. In check there is no "do nothing": every legal reply
+    must address the check, so standing pat is meaningless and captures-only is wrong (the only
+    legal move might not be a capture at all) - the correct move there is to search every legal
+    reply, not just captures, exactly as the main search would.
+
+    Fail-soft, matching negamax: `best` (the actual best value found) is tracked separately from
+    `alpha` (only a pruning threshold). A first version conflated the two - using alpha itself to
+    hold "the best value so far" - which meant that whenever a move failed to beat the *incoming*
+    alpha (set by whatever sibling was searched first, not by this move's own quality), the
+    function returned that alpha verbatim instead of the true value it had actually found. Two
+    completely different, differently-bad moves could then both fail low against the same
+    inherited alpha and come back reporting the identical score - caught directly by comparing
+    root move scores and finding a hung piece scored identically to a normal developing move.
+
+    Deliberately not using the transposition table here: quiescence "depth" isn't comparable to
+    the main search's remaining-depth counter, and giving it a fair place in the same table is a
+    refinement this milestone leaves out to keep the addition easy to verify on its own.
+    """
+    check_time()
+
+    moves = list(board.legal_moves)
+    if not moves:
+        return -MATE if board.is_check() else 0.0
+
+    if board.is_check():
+        # No stand-pat option: every legal reply must address the check, so there is no "value
+        # of doing nothing" to fall back on - best starts unset until a real reply is searched.
+        best = -math.inf
+        candidates = order_moves(board, moves)
+    else:
+        best = evaluate(board, len(moves))
+        if best >= beta:
+            return best
+        if best > alpha:
+            alpha = best
+        candidates = [move for move in order_moves(board, moves) if board.is_capture(move)]
+
+    for move in candidates:
+        board.push(move)
+        score = -quiescence(board, -beta, -alpha)
+        board.pop()
+        if score > best:
+            best = score
+        if best > alpha:
+            alpha = best
+        if alpha >= beta:
+            break
+    return best
+
+
 def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
     """Negamax search with alpha-beta pruning.
 
@@ -215,21 +273,22 @@ def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
             return cached.score
 
     if depth == 0:
-        score = evaluate(board, len(moves))
-        store_tt(key, depth, score, EXACT)  # a static eval is exactly correct for its depth
-        return score
-
-    best = -math.inf
-    for move in order_moves(board, moves):
-        board.push(move)
-        score = -negamax(board, depth - 1, -beta, -alpha)
-        board.pop()
-        if score > best:
-            best = score
-        if best > alpha:
-            alpha = best
-        if alpha >= beta:
-            break  # beta cutoff: the opponent already has a better option upstream
+        # quiescence does its own windowed sub-search (milestone A5), so its result carries the
+        # same fail-high/fail-low ambiguity as a regular node's - it's classified by the same
+        # flag logic below, not treated as unconditionally exact the way a bare static eval was.
+        best = quiescence(board, alpha, beta)
+    else:
+        best = -math.inf
+        for move in order_moves(board, moves):
+            board.push(move)
+            score = -negamax(board, depth - 1, -beta, -alpha)
+            board.pop()
+            if score > best:
+                best = score
+            if best > alpha:
+                alpha = best
+            if alpha >= beta:
+                break  # beta cutoff: the opponent already has a better option upstream
 
     flag = EXACT
     if best <= original_alpha:
