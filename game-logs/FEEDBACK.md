@@ -435,3 +435,18 @@ safety; A2/A3/A5 improved fast-clock numbers more than competition-clock ones). 
 `docs/IDEAS.md`'s own framing: "material plus piece-square tables is a real evaluation and it
 beats both baselines" - now demonstrably true here, not just asserted. Full data:
 `game-logs/v6-pst-vs-*/`.
+
+**Additional confirmation batches, larger sample (35 games), requested after the milestone:**
+
+| Opponent | Score | Record | Flags |
+|---|---|---|---|
+| `baselines/minimax`, fast clock | 84.3% | +26 =7 -2 | 1/35 |
+
+The one flag was **`baselines/minimax` itself flagging**, not our agent (`score_for_agent: win`
+in the batch data - minimax has no time management at all, unlike our agent since A4). Result
+holds steady with the 20-game number (85.0%).
+
+| `versions/v5-quiescence`, fast clock (head-to-head) | 77.1% | +22 =10 -3 | 0/35 |
+
+Also holds steady with the 30-game number (80.0%) - three losses appear at this larger sample
+(zero had shown up at 30 games) but the result stays clearly, comfortably positive either way.

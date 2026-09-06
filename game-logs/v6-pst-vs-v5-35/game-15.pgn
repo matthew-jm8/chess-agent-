@@ -1,0 +1,10 @@
+[Event "?"]
+[Site "?"]
+[Date "????.??.??"]
+[Round "?"]
+[White "?"]
+[Black "?"]
+[Result "1-0"]
+[Termination "checkmate"]
+
+1. Nf3 c5 2. e4 b6 3. Nc3 d6 4. Bc4 a6 5. a4 Ra7 6. d3 a5 7. Bf4 Qc7 8. Nb5 Qb7 9. Nxa7 Qxa7 10. Ng5 e6 11. Qh5 Qa8 12. Qxf7+ Kd8 13. Qxf8+ Kc7 14. Qxg7+ Bd7 15. Nxe6+ Kb7 16. Bd5+ Nc6 17. Qxd7+ Ka6 18. Nc7+ Ka7 19. Nxa8+ Kb8 20. Rc1 Nge7 21. Nxb6 Nc8 22. Bxd6+ Nxd6 23. Qxd6+ Ka7 24. Qxc6 Rb8 25. b4 axb4 26. e5 b3 27. Qc7+ Rb7 28. Qxb7# 1-0
