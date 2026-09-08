@@ -41,7 +41,7 @@ baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
 | A5 | Quiescence search | ✅ done — see below |
 | A6 | Evaluation upgrade: piece-square tables | ✅ done — see below |
 | B0 | Full env parity (torch/numba/onnxruntime) | ✅ done on Windows — see below; Silicon Mac still pending |
-| B1 | numba-jit the evaluation | ⬜ planned |
+| B1 | numba-jit the evaluation | ✅ done — see below |
 | B2 | Neural-net evaluation (**stretch goal**, not required) | ⬜ optional |
 | C | Submission safety buffer (gate, edge cases, zip, smoke games) | ⬜ last 1-2 days |
 
@@ -108,10 +108,11 @@ neural net (B2) is actually worth shipping later. See below.
 **B0. Full environment parity** *(done, on a Windows machine — see below)* — plain `uv sync`
 (no exclusions); confirm torch, onnxruntime, numba install cleanly; run `make gate`.
 
-**B1. numba-jit the evaluation** — following `baselines/numba/agent.py`'s pattern exactly:
-encode board state into numpy arrays, `@njit` the hot evaluation function, warm it up once at
-import (inside the init budget, not on the clock). The win is the extra depth the speed buys,
-not the eval call itself.
+**B1. numba-jit the evaluation** *(done — see below)* — ended up reading raw bitboards directly
+rather than `baselines/numba/agent.py`'s array pattern (the array version's real speedup was too
+small to matter); `@njit` decodes and evaluates in one compiled pass, warmed up once at import
+(inside the init budget, not on the clock). The win is the extra depth the speed buys, not the
+eval call itself — see below for why that didn't show up as a higher score in testing.
 
 **B2. Neural-net evaluation — stretch goal only.** A solid classical engine (A0–A6, B1) is the
 safe submission; this is attempted only with real time to spare. Train a small NNUE-style net
@@ -350,3 +351,44 @@ it does not by itself fix the Intel Mac (still no wheels for that arch at these 
 replace getting the Silicon Mac working, which remains the target dev machine per the hardware
 note at the top of this doc. In the meantime, B1 and B2 work can proceed on this Windows
 machine.
+
+### B1 — numba-jit the evaluation
+
+Two attempts, both fully measured rather than assumed. Full narrative and numbers in
+`game-logs/FEEDBACK.md`; summary here.
+
+**First attempt** followed `baselines/numba/agent.py`'s pattern literally (`board.piece_map()` →
+three numpy arrays → jitted per-square loop). Correct (0 mismatches vs. the old pure-Python eval
+across ~8,000 positions) but only **~1.0-1.3x faster** — a real board has ≤32 pieces, and
+`piece_map()`'s dict construction plus numba's per-call array-argument marshaling was competing
+with whatever the compiled loop saved. Batch-tested worse than pre-numba `v6-pst` against
+`baselines/minimax` on both clocks, including one real flag on the competition clock.
+
+**Second attempt** skipped `piece_map()`/arrays entirely: reads python-chess's raw per-piece-type
+bitboards (plain 64-bit integers it already maintains) and jits the decode *and* the evaluation
+together in one compiled call taking scalar arguments. Cast to `np.uint64` specifically, not
+`int64` — a bitboard can have bit 63 set (h8 occupied), and signed right-shift on that would
+sign-extend instead of zero-filling, corrupting every subsequent bit test. Re-verified correct
+(0 mismatches, same ~8,000-position check) before trusting it. Real, repeatable speedup this
+time: **~5.4x-7.0x faster per call** than the original pure-Python eval.
+
+**The real speedup did not translate into a higher score against `baselines/minimax`** — if
+anything it scored lower than both `v6-pst` and the marginal first attempt (fast clock 60.0% vs.
+v6's 85.0%; competition clock 66.7% vs. v6's 83.3%). Looked at the actual games rather than just
+the percentage: the drop is entirely from **more draws, not more losses** (zero losses on the
+competition clock in both `v6-pst`'s testing and this version's; fast-clock draws roughly
+doubled, 10/20 vs. 4/20). The faster eval provably buys deeper search, but in these matchups that
+deeper search finds a repetition-safe draw more often than it converts to a win. Recorded as this
+milestone's honest result, not smoothed into a claimed win — 20-26 games per matchup is still a
+modest sample.
+
+**Two things this testing surfaced, deliberately left as backlog, not fixed as part of B1** (same
+discipline as A6 leaving `MOBILITY_WEIGHT` alone to isolate what PST bought): a reproducible
+opening weakness where the evaluation can't tell a genuinely bad early queen sortie from a good
+one (5 of 9 total losses across this milestone's batches trace to one of two such patterns,
+several of them byte-identical games against different opponents — real evidence, not noise), and
+a pre-existing iterative-deepening risk where `get_move()` starts a new search depth with no
+forecast of whether it fits the remaining budget (confirmed present in `v6-pst` too, at equal
+magnitude, via direct depth-by-depth timing — not something B1 introduced).
+
+Snapshot: `versions/v7-numba-eval/agent.py`.

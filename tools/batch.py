@@ -120,11 +120,22 @@ def main() -> None:
     print("terminations: " + ", ".join(f"{name} {count}" for name, count in terminations.items()))
     print(f"saved to {out_dir}/")
 
-    broken = {name: count for name, count in terminations.items() if name in FAILED_TERMINATIONS}
+    # A termination in FAILED_TERMINATIONS (crash/illegal/flag/init) always names the side that
+    # erred as the *loser* (harness/referee.py's _opponent_wins) - so it's only actually our
+    # agent's problem when score_for_agent is a loss, not whenever the label shows up at all.
+    # Otherwise a batch where the *opponent* flagged (a real, good result for our agent) reports
+    # a false "your agent failed" and exits non-zero over nothing. both_failed is the one
+    # ambiguous case - both sides errored at once - so it's still treated as a real failure.
+    broken = [
+        game
+        for game in games
+        if game["termination"] in FAILED_TERMINATIONS
+        and (game["score_for_agent"] == "loss" or game["termination"] == "both_failed")
+    ]
     if broken:
         raise SystemExit(
             "your agent failed to finish a game: "
-            + ", ".join(f"{name} {count}" for name, count in broken.items())
+            + ", ".join(f"game {g['index']} ({g['termination']})" for g in broken)
         )
 
 

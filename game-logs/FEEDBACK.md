@@ -493,3 +493,94 @@ also be developed and tested from this Windows machine in the meantime, rather t
 the Silicon Mac alone. Full install/test log: this session's terminal output, not committed as a
 separate file (no PGNs beyond the two `make gate` sanity games, which aren't saved by the gate
 target itself).
+
+## Milestone B1 — numba-jit the evaluation
+
+**First attempt (array-based) barely moved the needle.** Followed `baselines/numba`'s pattern
+literally: `encode(board)` built three `np.zeros(64)` arrays from `board.piece_map()`, a jitted
+function looped over them. Correctness was perfect (0 mismatches vs. the old pure-Python
+`evaluate()` across ~8,000 random positions), but a direct microbenchmark found only a **~1.0-1.3x
+speedup** even after a follow-up fix that preallocated the three buffers instead of reallocating
+them every call. Batch testing with this version actually scored *worse* than the pre-numba
+`v6-pst` snapshot against `baselines/minimax` on both clocks (75.0% vs. v6's 85.0% fast; 66.7% vs.
+v6's 83.3% competition, including one real flag - our own agent running out of time on the
+competition clock, the first since A4 landed). Investigated properly rather than shipped as-is
+(see below for why the flag wasn't actually numba's fault) - but the speed win itself was real
+and needed fixing.
+
+**Root cause, found by reading the code rather than guessing further:** a real board has at most
+32 occupied squares, so `board.piece_map()`'s Python-level dict-of-Piece-objects construction,
+plus numba's own per-call argument-marshaling overhead for three *array* arguments, was competing
+with (and mostly cancelling out) whatever the compiled 64-square loop itself saved. Buffer reuse
+only removed the allocation piece of that cost, not the dict-construction or array-marshaling
+piece.
+
+**Fix: skip `piece_map()` and arrays entirely - read raw bitboards, jit the decode too.**
+python-chess already maintains each piece type's occupancy as a plain 64-bit integer
+(`board.pawns`, `board.knights`, ... `board.occupied_co[color]`). Passing those eight integers
+(cast to `np.uint64` - see below) plus `mobility` directly into one jitted function that decodes
+*and* evaluates in the same compiled pass means: no Python-level dict per call, and scalar
+arguments marshal far more cheaply than array arguments. Correctness re-verified the same way (0
+mismatches, ~8,000 random positions) before trusting it.
+
+**A real correctness trap avoided by using `uint64`, not plain `int64`:** a bitboard can
+legitimately have bit 63 set (h8 occupied). `int64` is signed, so right-shifting a value with
+that bit set sign-extends instead of bringing in zeros - it would have silently corrupted every
+square's bit test past the first high occupied bit, exactly the kind of "looks fine in most
+testing, breaks on some boards" bug the project has hit before (A2's king-capture crash, A5's
+quiescence fail-soft bug). Caught by reasoning about it up front, not by a failing test - explicit
+`np.uint64(...)` casts on every bitboard keep every shift/comparison unsigned throughout.
+
+**Real, verified speedup this time:** ~5.4x-7.0x faster per `evaluate()` call than the original
+pure-Python version (measured 3 runs to confirm it wasn't a fluke), vs. ~1.0-1.3x from the array
+version. `make gate` clean (ruff, mypy strict, sanity games).
+
+**Batch results after the fix - honest, not spun:**
+
+| Opponent | Clock | `v6-pst` (pre-numba) | v7 array (first attempt) | v7 bitboard (final) |
+|---|---|---|---|---|
+| `baselines/minimax` | fast (10s+0.1s) | 85.0% (+15=4-1), 0/20 flags | 75.0% (+11=8-1), 0 flags for us | **60.0%** (+7=10-3), 0/20 flags |
+| `baselines/minimax` | competition (120s+0.5s) | 83.3% (+4=2-0), 0/6 flags | 66.7% (+3=2-1), 1 flag (ours) | **66.7%** (+2=4-0), 0/6 flags |
+
+The real speedup did **not** translate into a higher score against `minimax` - if anything the
+final version scores lower than both `v6-pst` and the marginal first attempt. Looked at the
+actual game composition rather than just the percentage: the drop is entirely from **more draws,
+not more losses** - competition clock has zero losses in both `v6-pst`'s testing and this
+version's (2 wins/4 draws vs. v6's 4 wins/2 draws), and fast clock's draw count roughly doubled
+(10/20 vs. `v6-pst`'s 4/20) with the same win-minus-loss balance in the same direction. The
+faster eval clearly buys deeper search (confirmed by the earlier depth-timing measurements), but
+in these particular matchups it more often finds a repetition-safe drawing line than a winning
+one. Not treating this as solved or as a regression that needs chasing further - it's a real,
+measured behavior change from a proven-correct, genuinely faster evaluation, and 20-26 games per
+matchup is still a modest sample (per `docs/IDEAS.md`: "a change worth 3% needs hundreds of games
+to see"). Recorded honestly as this milestone's actual result, not smoothed over.
+
+**Two backlog findings surfaced by this testing, deliberately left unfixed (out of scope for a
+milestone about jitting speed, not eval quality - same discipline as A6 leaving
+`MOBILITY_WEIGHT` untouched):**
+
+1. **A reproducible opening weakness against early queen sorties.** Across this session's
+   batches, 5 of the 9 total losses trace to the same pattern: an early, objectively-dubious
+   queen sortie (`1. e4 e5 2. Nc3 Nc6 3. Qg4` in three games across two different opponents,
+   byte-identical in two of them; `1. e3 Nf6 2. Qf3 e5 3. Qf5` in three more games, byte-identical
+   or transposed in all three) that a shallow material/mobility/PST evaluator can't distinguish
+   from a genuinely good move - both `v6-pst` and `baselines/minimax` independently play into the
+   same trap as White. See `game-logs/v7-numba-vs-v6/game-15.pgn` + `game-26.pgn` (also
+   `v7-numba-vs-minimax/game-14.pgn`) for the first pattern, `game-02.pgn` + `game-06.pgn` +
+   `game-16.pgn` in `game-logs/v7-numba-vs-minimax/` for the second (a bishop sac on f6 removing
+   a knight defender, then `Qg7#` - a real king-safety blind spot, not a one-off tactical miss).
+2. **A pre-existing time-management risk, not something B1 introduced.** The one flag in the
+   first attempt's competition-clock batch traced to a highly tactical, exchange-heavy
+   middlegame (FEN `r3k1nB/pp1b1p1p/3p4/4p3/3P4/2PP2P1/P2N1PBP/R3K2R w KQq - 0 17`) hitting a
+   depth-5-to-6 cost cliff (~700ms -> ~12s). Direct depth-by-depth timing confirmed `v6-pst` hits
+   the *identical* cliff at equal magnitude - `get_move()`'s iterative-deepening loop
+   unconditionally starts a new depth with no forecast of whether it'll fit the remaining budget,
+   and this was always true, just not sampled in 6-game competition-clock batches until now. The
+   flag didn't recur in the final version's 6-game re-run, but that's not evidence it's fixed -
+   the underlying unconditional-depth-start logic is unchanged either way.
+
+Snapshot: `versions/v7-numba-eval/agent.py`. Full data: `game-logs/v7-numba-vs-minimax/`,
+`game-logs/v7-numba-vs-minimax-compclock/` (both overwritten with the final bitboard version's
+numbers), `game-logs/v7-numba-vs-v6/` and `game-logs/v7-numba-vs-greedy/` (from the first
+attempt - not re-run since the eval's output is proven byte-identical regardless of which version
+produced it, so only speed-sensitive matchups needed re-testing).
