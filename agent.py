@@ -119,6 +119,12 @@ class TTEntry(NamedTuple):
     depth: int  # remaining depth the score was computed with - deeper is more trustworthy
     score: float
     flag: int  # EXACT, LOWERBOUND, or UPPERBOUND, above
+    best_move: chess.Move | None  # milestone A9: the move that produced this score, if any -
+    # used only as a move-ordering hint (try this first next time this position comes up, even
+    # when depth is too shallow to trust the score itself), never as a substitute for actually
+    # searching a node. Still meaningful on an UPPERBOUND (fail-low) entry, where it's the
+    # least-bad move found rather than a proven-best one - a real hint either way, not a
+    # guarantee, same spirit as reusing an EXACT/LOWERBOUND score under a different window.
 
 
 TT: dict[Hashable, TTEntry] = {}
@@ -133,10 +139,12 @@ TT_MAX_ENTRIES = 2_000_000
 # this shouldn't change which move gets picked - it's a real, accepted trade-off, not a bug.
 
 
-def store_tt(key: Hashable, depth: int, score: float, flag: int) -> None:
+def store_tt(
+    key: Hashable, depth: int, score: float, flag: int, best_move: chess.Move | None
+) -> None:
     if len(TT) >= TT_MAX_ENTRIES:
         TT.clear()
-    TT[key] = TTEntry(depth, score, flag)
+    TT[key] = TTEntry(depth, score, flag, best_move)
 
 
 # --- Piece-square tables (milestone A6) ---
@@ -485,8 +493,11 @@ def see(board: chess.Board, move: chess.Move) -> float:
     return first_victim_value - _see_exchange(scratch, target, not mover.color, hanging_value)
 
 
-def order_moves(board: chess.Board, moves: list[chess.Move]) -> list[chess.Move]:
+def order_moves(
+    board: chess.Board, moves: list[chess.Move], tt_move: chess.Move | None = None
+) -> list[chess.Move]:
     """Captures first, best captures first (MVV-LVA); quiet moves keep their given order.
+    `tt_move`, when given, is tried before everything else, captures included.
 
     Alpha-beta only prunes once it has already found a move good enough to trigger a cutoff -
     so the earlier a strong move is tried, the more of the tree gets skipped. Captures are the
@@ -500,9 +511,15 @@ def order_moves(board: chess.Board, moves: list[chess.Move]) -> list[chess.Move]
     per-call cost measured too high to pay for itself here; see the comment above
     SEE_PRUNE_THRESHOLD for the numbers. Reverted to plain MVV-LVA, which is what every prior
     milestone's own results (through B1) were actually measured against.
+
+    Milestone A9 adds `tt_move`: a move a past search already found good here (see negamax's TT
+    probe) is a far stronger ordering signal than any static guess about it, MVV-LVA included -
+    it beats even a queen-takes-queen capture to the front of the list.
     """
 
     def score(move: chess.Move) -> float:
+        if move == tt_move:
+            return math.inf  # milestone A9: known-good beats every static guess about a move
         if not board.is_capture(move):
             return -1.0  # quiet moves sort after every capture
         attacker = board.piece_at(move.from_square)
@@ -596,6 +613,12 @@ def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
     first place (they had a better alternative earlier) - so we stop looking at this branch's
     remaining moves. That cutoff is what lets us search deeper than plain minimax in the same
     time: we skip branches whose outcome can't change the final decision.
+
+    Milestone A9: the TT probe below now also pulls a move-ordering hint (see order_moves) even
+    when the entry's depth is too shallow to trust its score - a move that was good here before,
+    at any depth, is still a far better first guess than a static heuristic. Whatever move this
+    call itself finds best gets stored back, so the hint improves the more a position is
+    revisited (transpositions, or the same position one ply shallower on a later move).
     """
     check_time()  # may raise TimeUp - see get_move for how an unfinished depth is handled
 
@@ -611,6 +634,7 @@ def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
     original_alpha = alpha
     key = board._transposition_key()
     cached = TT.get(key)
+    tt_move = cached.best_move if cached is not None else None
     if cached is not None and cached.depth >= depth:
         if cached.flag == EXACT:
             return cached.score
@@ -621,19 +645,23 @@ def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
         if alpha >= beta:
             return cached.score
 
+    best_move: chess.Move | None = None
     if depth == 0:
         # quiescence does its own windowed sub-search (milestone A5), so its result carries the
         # same fail-high/fail-low ambiguity as a regular node's - it's classified by the same
         # flag logic below, not treated as unconditionally exact the way a bare static eval was.
+        # No best_move out of quiescence - it's never stored at depth 0 (see store_tt call below
+        # only running for depth > 0 nodes' own moves; a depth-0 TT entry keeps best_move=None).
         best = quiescence(board, alpha, beta)
     else:
         best = -math.inf
-        for move in order_moves(board, moves):
+        for move in order_moves(board, moves, tt_move):
             board.push(move)
             score = -negamax(board, depth - 1, -beta, -alpha)
             board.pop()
             if score > best:
                 best = score
+                best_move = move
             if best > alpha:
                 alpha = best
             if alpha >= beta:
@@ -644,7 +672,7 @@ def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
         flag = UPPERBOUND  # never beat the window we came in with - a "failed low" bound
     elif best >= beta:
         flag = LOWERBOUND  # cut off on a beta break - the true score is at least this good
-    store_tt(key, depth, best, flag)
+    store_tt(key, depth, best, flag, best_move)
     return best
 
 

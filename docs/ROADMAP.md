@@ -42,6 +42,7 @@ baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
 | A6 | Evaluation upgrade: piece-square tables | ✅ done — see below |
 | A7 | Static Exchange Evaluation (move ordering + quiescence pruning) | ⚠️ attempted, reverted — see below |
 | A8 | Iterative-deepening root-move reordering | ✅ done — see below |
+| A9 | Transposition-table best-move ordering hint | ✅ done — see below |
 | B0 | Full env parity (torch/numba/onnxruntime) | ✅ done on Windows — see below; Silicon Mac still pending |
 | B1 | numba-jit the evaluation | ✅ done — see below |
 | B2 | Neural-net evaluation (**stretch goal**, not required) | ⬜ optional |
@@ -374,6 +375,23 @@ in under 1ms even generously budgeted, ruling out A8's own logic as the cause - 
 cumulative clock bleed over an unusually long (125-ply) game, the same underlying time-budget-
 formula risk category B1's own flag investigation already found, not something new. Snapshot:
 `versions/a8-rootorder/agent.py`. Full data in `game-logs/FEEDBACK.md`.
+
+### A9 — Transposition-table best-move ordering hint
+
+The same idea as A8 (a move known to be good here beats a static guess) applied everywhere A8
+didn't reach: internal search nodes. `TTEntry` gained a `best_move` field; `negamax` records
+whichever move produced its result and offers it as `order_moves`' top priority - ahead of every
+capture - the next time that position comes up, including from a too-shallow entry whose score
+isn't itself trustworthy yet.
+
+Verified directly before batch-testing: confirmed `order_moves` actually promotes the given move
+to the front even past a strong capture, and confirmed a real depth-4 search populates TT entries
+with well-formed best moves (906 of 3,901 - depth-0 entries never get one, by design).
+
+**Batch: 58.3% (+15 =5 -10) vs. the pre-A9 baseline** - the first clearly positive result among
+this session's three search-improvement attempts, a real margin above 50% rather than a coin
+flip. One flag in the batch belonged to the opponent, confirmed directly in the batch's own
+summary data. Snapshot: `versions/a9-ttmove/agent.py`. Full data in `game-logs/FEEDBACK.md`.
 
 ### B0 — Full environment parity (Windows machine)
 

@@ -687,3 +687,31 @@ either - noted, not solved, same as B1's version of this finding.
 Snapshot: `versions/a8-rootorder/agent.py`. Full data: `game-logs/a8-rootorder-vs-v7/`; the flag
 diagnosis's position/timing comparison is recorded here rather than as a separate saved file,
 matching how B1's own flag investigation was written up.
+
+## Milestone A9 — transposition-table best-move ordering hint
+
+A8 fixed root-move ordering across iterative-deepening depths; the same idea was still completely
+missing everywhere else in the tree. `TTEntry` stored only `depth, score, flag` - even a TT hit
+too shallow to trust the score outright carried no information at all about which move was good
+here. Added a `best_move` field: `negamax` now records whichever move produced its returned
+score, and on the next visit to that position (an exact transposition, or the same position
+reached one ply shallower on a later move) `order_moves` tries that move before anything else -
+ahead of every capture, not just ahead of other quiet moves. Kept meaningful even for an
+UPPERBOUND (fail-low) entry, where it's the least-bad move found rather than a proven-best one -
+still a real hint, the same spirit the code already used for reusing a bound score under a
+different window.
+
+**Verified two ways before batch-testing, not just "it runs":** `order_moves(board, moves,
+tt_move=X)` puts `X` first even when the list also contains a strong capture (checked directly -
+a quiet developing move moved from index 6 to index 0 out of 31 legal moves). A real depth-4
+search from the starting position was then checked to confirm TT entries actually end up with a
+populated, well-formed `best_move` (906 of 3,901 entries did - the rest are depth-0/quiescence
+entries, which by design never get one).
+
+**Batch (30 games, fast clock, vs. the pre-A9 baseline `a8-rootorder`): 58.3% (+15 =5 -10)** - the
+first clearly positive result among tonight's three search-improvement attempts (A7/SEE was a
+regression, A8 was close to neutral at 48.3%). One flag in the batch belonged to the *opponent*
+(`a8-rootorder`, checked directly in `summary.json`), not this version - a clean win, no
+self-inflicted issue.
+
+Snapshot: `versions/a9-ttmove/agent.py`. Full data: `game-logs/a9-ttmove-vs-a8/`.
