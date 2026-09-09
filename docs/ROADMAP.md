@@ -40,6 +40,8 @@ baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
 | A4 | Iterative deepening + real time management | ✅ done — see below |
 | A5 | Quiescence search | ✅ done — see below |
 | A6 | Evaluation upgrade: piece-square tables | ✅ done — see below |
+| A7 | Static Exchange Evaluation (move ordering + quiescence pruning) | ⚠️ attempted, reverted — see below |
+| A8 | Iterative-deepening root-move reordering | ✅ done — see below |
 | B0 | Full env parity (torch/numba/onnxruntime) | ✅ done on Windows — see below; Silicon Mac still pending |
 | B1 | numba-jit the evaluation | ✅ done — see below |
 | B2 | Neural-net evaluation (**stretch goal**, not required) | ⬜ optional |
@@ -331,6 +333,47 @@ a wide margin rather than trading one off against the other. Directly confirms
 beats both baselines" — with actual numbers rather than taking it on faith. **Phase A (the
 classical engine) is now complete.** Full data: `game-logs/v6-pst-vs-*/`, written up in
 `game-logs/FEEDBACK.md`.
+
+### A7 — Static Exchange Evaluation (attempted, correct, reverted)
+
+Prompted by a genuinely good question from a teammate: could the engine tell "this risks a
+queen" from "this risks a pawn" and skip searching the worse branch? That's Static Exchange
+Evaluation (SEE) - play the *whole* capture/recapture sequence on a square out, not just the
+first trade. Built and hand-verified correct (four derived positions including an x-ray case,
+all exact) before it touched any search behavior - the same discipline every milestone here uses.
+Wired into `order_moves()` (replacing MVV-LVA's single-trade guess) and `quiescence()` (skip a
+capture whose full exchange loses material - argued safe only there, never in the main search,
+since a static judgment cutting a whole negamax branch could throw away a real combination).
+
+**Batch-tested worse, not better: 46.7%, then 45.0% after fixing a real but not-the-cause
+inefficiency (`see()` was being computed twice per capture).** Root cause measured directly: an
+isolated benchmark found `see()` costs **~6.5x MVV-LVA per call** (18.4us vs. 2.8us) - a
+`board.copy()` plus a simulated multi-step exchange vs. two dictionary lookups - paid on every
+capture at every node across the whole tree, not just quiescence. The accuracy SEE buys in
+ordering cost more search depth than it bought back.
+
+**Reverted the wiring; kept `see()` itself in the file, unused**, as verified groundwork rather
+than deleting real work - the parallel to B1 is direct (B1's first eval attempt was also correct
+but too slow, and a bitboard rewrite fixed it with a real ~5-7x win instead of ~1.0-1.3x). The
+same rewrite - work with raw bitboard integers instead of `board.copy()` - is the concrete next
+step for `see()`, not attempted in this pass. Full data and numbers in `game-logs/FEEDBACK.md`.
+
+### A8 — Iterative-deepening root-move reordering
+
+A cheap, standard technique the A7 audit found completely absent: the previous depth's winning
+root move gets no priority when the next depth starts. Fixed by moving it to the front of the
+root move list after each completed depth - provably safe (order-only, never changes which move
+search settles on) and cheap (list-length work, once per depth, not per node).
+
+**Batch: 48.3% (+12 =5 -13) vs. the pre-A8 baseline** - close to neutral, and meaningfully
+different in shape from the noisy 30.0% a same-code sanity check happened to show earlier the
+same night, consistent with a genuinely small effect rather than a real swing either way. One
+self-inflicted flag in the batch was investigated directly (reconstructed the exact position,
+compared old vs. new code): the position itself had 2 legal moves and both versions answered it
+in under 1ms even generously budgeted, ruling out A8's own logic as the cause - almost certainly
+cumulative clock bleed over an unusually long (125-ply) game, the same underlying time-budget-
+formula risk category B1's own flag investigation already found, not something new. Snapshot:
+`versions/a8-rootorder/agent.py`. Full data in `game-logs/FEEDBACK.md`.
 
 ### B0 — Full environment parity (Windows machine)
 

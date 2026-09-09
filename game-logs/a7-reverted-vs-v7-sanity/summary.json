@@ -1,0 +1,109 @@
+{
+  "label": "a7-reverted-vs-v7-sanity",
+  "agent": ".",
+  "opponent": "versions\\v7-numba-eval",
+  "clock": "fast test clock (10s+0.1s)",
+  "base_ms": 10000,
+  "increment_ms": 100,
+  "games": 10,
+  "wins": 1,
+  "draws": 4,
+  "losses": 5,
+  "score": 0.3,
+  "terminations": {
+    "checkmate": 6,
+    "threefold_repetition": 4
+  },
+  "results": [
+    {
+      "index": 1,
+      "pgn_file": "game-01.pgn",
+      "agent_color": "white",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 52
+    },
+    {
+      "index": 2,
+      "pgn_file": "game-02.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 117
+    },
+    {
+      "index": 3,
+      "pgn_file": "game-03.pgn",
+      "agent_color": "white",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 132
+    },
+    {
+      "index": 4,
+      "pgn_file": "game-04.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 76
+    },
+    {
+      "index": 5,
+      "pgn_file": "game-05.pgn",
+      "agent_color": "white",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 238
+    },
+    {
+      "index": 6,
+      "pgn_file": "game-06.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 111
+    },
+    {
+      "index": 7,
+      "pgn_file": "game-07.pgn",
+      "agent_color": "white",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 120
+    },
+    {
+      "index": 8,
+      "pgn_file": "game-08.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 197
+    },
+    {
+      "index": 9,
+      "pgn_file": "game-09.pgn",
+      "agent_color": "white",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 52
+    },
+    {
+      "index": 10,
+      "pgn_file": "game-10.pgn",
+      "agent_color": "black",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 60
+    }
+  ]
+}

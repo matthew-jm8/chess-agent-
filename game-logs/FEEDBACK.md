@@ -584,3 +584,106 @@ Snapshot: `versions/v7-numba-eval/agent.py`. Full data: `game-logs/v7-numba-vs-m
 numbers), `game-logs/v7-numba-vs-v6/` and `game-logs/v7-numba-vs-greedy/` (from the first
 attempt - not re-run since the eval's output is proven byte-identical regardless of which version
 produced it, so only speed-sensitive matchups needed re-testing).
+
+## Milestone A7 — Static Exchange Evaluation (attempted, correct, reverted)
+
+A teammate asked a genuinely good question: could the engine recognize "this move risks a queen,
+that one only risks a pawn" and skip searching the worse branch? That's Static Exchange
+Evaluation (SEE) - playing the full capture/recapture sequence on a square out, not just the
+first trade, to get the real net material result. `order_moves()`'s existing MVV-LVA score only
+ever looked at one capture in isolation (victim value minus attacker value), with no idea whether
+the capturing piece is itself then recaptured for a loss.
+
+**Built and verified correct before touching any search behavior**, per this project's own
+discipline: `see()` (a recursive "swap-off" - each side free to stop the exchange the instant
+continuing would cost them material, mirroring quiescence's own stand-pat logic) checked against
+four hand-derived positions - a simple winning capture, a losing capture, an even trade, and
+critically an x-ray case (a rook behind another rook, revealed only once the front one trades
+off) - all four matched exact hand calculations, including the x-ray one. `evaluate()` itself was
+untouched, so the existing 8,000-position regression check still came back at 0 mismatches
+throughout. `ruff`/`mypy --strict`/`make gate` all stayed clean the whole time.
+
+**Wired into two places**: `order_moves()` (sort captures by real exchange value instead of the
+MVV-LVA guess) and `quiescence()` (skip searching a capture further if its SEE is negative -
+argued safe specifically there, never in the main search, since stand-pat is always the fallback
+and quiescence only ever looks at captures anyway - a static judgment skipping a whole *negamax*
+branch could throw away a real combination, which is why that boundary was deliberately kept).
+
+**First batch (30 games, fast clock, head-to-head vs. the pre-A7 baseline `v7-numba-eval`):
+46.7% (+9 =10 -11)** - worse, not better. Investigated rather than either shipped optimistically
+or quietly dropped. Found and fixed a real inefficiency along the way: `see()` was being computed
+*twice* per capture in quiescence (once inside `order_moves()`'s sort, once again in the filter) -
+fixed by computing it once and reusing the result. **Re-ran the same batch: 45.0% (+6 =15 -9)** -
+unchanged within noise. The dedup was a legitimate fix on its own terms but wasn't the actual
+cause.
+
+**Root cause, measured directly rather than guessed further**: an isolated benchmark (3,502 real
+capture cases collected from random games, `see()` vs. the old MVV-LVA formula, no search
+involved) found **`see()` costs ~6.5x what MVV-LVA costs per call - 18.4us vs. 2.8us**. Each
+`see()` call does a `board.copy()` plus a simulated multi-step exchange (`board.attackers()`
+queries, piece removal/placement); MVV-LVA is two dictionary lookups. `order_moves()` calls this
+for *every capture at every node in the whole tree*, not just quiescence's leaf-adjacent nodes -
+so the accuracy SEE genuinely buys in move ordering was being paid for with search depth lost
+across the entire tree, and losing depth cost more than better-ordered captures bought back. A
+third, independent measurement confirms it end-to-end: a fixed-depth-4 search across 240 random
+positions took 1526ms/position with SEE wired in vs. 1098ms/position without it - a real ~39%
+slower search overall, not just a slower per-call number in isolation.
+
+**Reverted the wiring, kept the (correct, verified) `see()` implementation in the file, unused,**
+as groundwork for a lighter reimplementation rather than deleting verified-correct work. The
+parallel to milestone B1 is direct: B1's first (array-based) eval attempt was also correct but
+too slow to pay for itself (~1.0-1.3x), and a bitboard rewrite (reading python-chess's raw
+per-piece bitboards instead of building a Python object per square) got a real ~5-7x win instead
+of a marginal one. The same rewrite is the natural next step for `see()` - avoid `board.copy()`
+and work directly with bitboard integers the way `_evaluate_bitboards_jit` already does. Not
+attempted in this pass; flagged as the concrete next move rather than a vague "optimize later."
+
+No version snapshot for this milestone (nothing shipped differs from `v7-numba-eval`). Verified
+two ways, not just asserted: a direct `diff` against `versions/v7-numba-eval/agent.py` confirms
+every remaining difference is either the dormant (unused) SEE code or a docstring - zero changes
+to `order_moves()`'s scoring, `quiescence()`'s candidate-building, `negamax()`, `search_root()`,
+or `get_move()`. A 10-game sanity batch came back 30.0% (+1 =4 -5) against `v7-numba-eval` -
+*not* evidence of a real difference, since the diff already proves the algorithms are
+byte-identical; it's the same small-sample noise the project already learned to expect from A3's
+TT scare (25% at 10 games, 47.5% once re-run at 40) - included here for completeness, not as
+supporting evidence, since the diff is the stronger proof. Full data: `game-logs/a7-see-vs-v7/`
+(30 games - the *second*, post-dedup-fix attempt only; both batches reused the same label, so the
+first attempt's PGNs/summary.json were overwritten on disk - its 46.7% record is preserved here
+in writing, not as replayable game files) and `game-logs/a7-reverted-vs-v7-sanity/` (the
+noisy-but-superseded-by-the-diff sanity batch).
+
+## Milestone A8 — iterative-deepening root-move reordering
+
+A cheap, standard idea the A7 audit flagged as completely absent: `get_move()`'s iterative
+deepening reused the same MVV-LVA-ordered root move list at every depth, unchanged - the move
+that won at depth 3 got no priority when depth 4 started, despite being very likely still strong.
+After each completed depth, `get_move()` now moves that depth's winning move to the front of the
+list before starting the next one. Provably safe by construction: this only ever changes which
+order root moves are *tried* in, never which one search settles on - `search_root` still scores
+every move at the new depth regardless of where it sits in the list.
+
+**Batch (30 games, fast clock, vs. pre-A8 baseline): 48.3% (+12 =5 -13)** - close to neutral, not
+a clear win, but the real signal is the *shape* of the result, not just the percentage: this is
+much closer to 50% than the 30.0% a same-code sanity check happened to show for A7's revert,
+consistent with a genuinely small, order-only effect rather than either a real regression or a
+dramatic improvement at this sample size.
+
+**One real self-inflicted flag in the batch (game 8, 125 plies) - investigated properly, not
+dismissed.** This is the first fast-clock self-flag across any of tonight's batches, so it got
+the same treatment as B1's competition-clock flag: reconstruct the exact position, compare old
+vs. new code directly. The position where it happened (FEN
+`8/4k3/5N2/4P3/2Q5/P3B2P/8/6K1 b - - 10 63`) had **exactly 2 legal moves**, and both the pre-A8
+code and this version answered it in **under 1ms even given a 400ms budget** - nowhere close to
+expensive enough to explain a flag on its own. A8's own added work (`list.remove()` +
+`list.insert()` once per completed depth, on a legal-move-count-sized list) is microseconds, not
+something that compounds into a flag either. The far more likely explanation: 125 plies is an
+unusually long game, and slow, cumulative clock bleed across that many decisions - not any single
+expensive node - is a pre-existing, generic risk in the time budget formula
+(`time_left_ms / max(20, 40 - moves_played)`) that predates A8 and wasn't changed by it. Distinct
+from B1's depth-cliff flag (one expensive node) but the same underlying theme: the time-budget
+formula doesn't guarantee flag-safety in every scenario, and this milestone doesn't fix that
+either - noted, not solved, same as B1's version of this finding.
+
+Snapshot: `versions/a8-rootorder/agent.py`. Full data: `game-logs/a8-rootorder-vs-v7/`; the flag
+diagnosis's position/timing comparison is recorded here rather than as a separate saved file,
+matching how B1's own flag investigation was written up.

@@ -154,6 +154,7 @@ def store_tt(key: Hashable, depth: int, score: float, flag: int) -> None:
 # 63=h8), so _to_square_indexed reverses the row order once at import time rather than
 # hand-transcribing every table into an unfamiliar order (error-prone for 6 tables of 64
 # numbers each, and much harder to check by eye against the published version).
+
 def _to_square_indexed(rank8_to_rank1: list[float]) -> list[float]:
     rows = [rank8_to_rank1[i : i + 8] for i in range(0, 64, 8)]
     return [value for row in reversed(rows) for value in row]
@@ -361,6 +362,129 @@ def evaluate(board: chess.Board, mobility: int) -> float:
 evaluate(chess.Board(), 20)
 
 
+# --- Static Exchange Evaluation (milestone A7 - implemented, verified, NOT currently wired in) ---
+#
+# order_moves' MVV-LVA score (below) looks at exactly one capture in isolation - victim value
+# minus attacker value - with no idea whether the capturing piece is itself then recaptured. SEE
+# instead plays the *whole* exchange out - every attacker and defender of the target square,
+# taking turns with their cheapest piece, each side free to stop the instant continuing would
+# cost them material - and returns the real net result. It's correct (hand-verified against
+# several positions, including an x-ray case) and was wired into order_moves/quiescence for a
+# real attempt, but measured out as a net loss: see() costs ~6.5x MVV-LVA per call (18.4us vs
+# 2.8us, isolated benchmark), paid on every capture at every node across the *whole* tree (not
+# just quiescence, since order_moves is called from negamax too) - two independent 30-game
+# batches against the pre-A7 baseline both came back under 50% (46.7%, then 45.0% after fixing an
+# unrelated double-call inefficiency, which didn't move the number). The per-call cost, not the
+# pruning, is the bottleneck. Left in the file, unwired, as correct groundwork for a lighter
+# bitboard-based reimplementation (following milestone B1's own array->bitboard rewrite, which
+# fixed an analogous cost problem) - see game-logs/FEEDBACK.md's A7 section for the full numbers.
+SEE_PRUNE_THRESHOLD = 0.0  # unused while see() is unwired; kept so a future rewrite doesn't need
+# to re-derive this from scratch - see the comment above quiescence()'s (currently plain MVV-LVA
+# ordered, no SEE filter) capture handling.
+
+
+def _capture_value(board: chess.Board, move: chess.Move) -> float:
+    """Value of whatever `move` immediately captures. Mirrors the en-passant handling
+    order_moves has always needed: the captured pawn isn't on move.to_square in that one case,
+    so piece_at there would wrongly see an empty square.
+    """
+    if board.is_en_passant(move):
+        return PIECE_VALUE[chess.PAWN]
+    victim = board.piece_at(move.to_square)
+    assert victim is not None
+    return PIECE_VALUE[victim.piece_type]
+
+
+def _least_valuable_attacker(
+    board: chess.Board, color: chess.Color, square: chess.Square
+) -> chess.Square | None:
+    """The cheapest piece of `color` currently attacking `square`, or None if there isn't one.
+
+    Called fresh at every step of see()'s simulated exchange (board.attackers() only ever
+    reflects the board as it currently stands, with no memory of earlier steps), so x-ray
+    attacks - a rook behind another rook on the same file, revealed the instant the piece in
+    front of it is removed - are picked up automatically, without any special-case code for them.
+
+    Known simplification: doesn't check whether the attacking piece is pinned, or whether a king
+    "attacker" would actually be moving into check - both illegal in a real game. This is the
+    standard approximation heuristic SEE implementations accept; board.attackers() is a raw
+    geometric attack computation, not a legal-move filter, and modeling real legality here would
+    cost far more than the rare mispriced exchange it would fix.
+    """
+    attackers = board.attackers(color, square)
+    if not attackers:
+        return None
+
+    def attacker_value(attacker_square: chess.Square) -> float:
+        piece = board.piece_at(attacker_square)
+        assert piece is not None
+        return ATTACKER_VALUE[piece.piece_type]
+
+    return min(attackers, key=attacker_value)
+
+
+def _see_exchange(
+    board: chess.Board, square: chess.Square, side: chess.Color, hanging_value: float
+) -> float:
+    """The value `side` can win by recapturing on `square`, where `hanging_value` is what's
+    currently sitting there. Mirrors quiescence()'s own "always free to stop" logic: recapturing
+    only makes sense if it doesn't lose material once the opponent's best reply is accounted for
+    - `max(0.0, ...)` is what lets a side that would come out behind simply decline to capture,
+    exactly the choice a real player has at every point in a real exchange.
+
+    Known simplification: doesn't handle a pawn promoting mid-exchange (recapturing onto the
+    back rank) - a further, rarer edge case than the top-level move's own promotion (handled in
+    see(), below) that the existing MVV-LVA code never handled either; left out to keep this
+    addition easy to verify, the same trade-off A5's quiescence made for its own scope.
+    """
+    attacker_square = _least_valuable_attacker(board, side, square)
+    if attacker_square is None:
+        return 0.0
+    attacker = board.piece_at(attacker_square)
+    assert attacker is not None
+    attacker_value = PIECE_VALUE.get(attacker.piece_type, 0.0)
+
+    board.remove_piece_at(attacker_square)
+    board.set_piece_at(square, attacker)
+    gain = hanging_value - _see_exchange(board, square, not side, attacker_value)
+    return max(0.0, gain)
+
+
+def see(board: chess.Board, move: chess.Move) -> float:
+    """Static Exchange Evaluation: the net material result of the *entire* capture/recapture
+    sequence a capture at move.to_square touches off, not just the first trade - positive means
+    the side playing `move` comes out ahead once the whole exchange plays out optimally for both
+    sides.
+
+    Simulated on a scratch copy (board.copy(stack=False)) by mutating piece placement directly
+    rather than board.push() - move legality, castling rights, and en passant rights don't matter
+    for anything past the first capture, only which pieces still attack the target square.
+
+    A capturing promotion leaves the *promoted* piece sitting on the target square, not the pawn
+    that moved there - what the opponent could recapture has to reflect that. The value returned
+    still only scores the capture itself, not the promotion's own separate material gain,
+    matching the scope order_moves' old MVV-LVA score already had (it never special-cased
+    promotions either).
+    """
+    target = move.to_square
+    mover = board.piece_at(move.from_square)
+    assert mover is not None
+    first_victim_value = _capture_value(board, move)
+
+    placed_piece_type = move.promotion if move.promotion is not None else mover.piece_type
+    placed_piece = chess.Piece(placed_piece_type, mover.color)
+
+    scratch = board.copy(stack=False)
+    if board.is_en_passant(move):
+        captured_pawn_square = target + (-8 if mover.color == chess.WHITE else 8)
+        scratch.remove_piece_at(captured_pawn_square)
+    scratch.remove_piece_at(move.from_square)
+    scratch.set_piece_at(target, placed_piece)
+
+    hanging_value = PIECE_VALUE.get(placed_piece_type, 0.0)
+    return first_victim_value - _see_exchange(scratch, target, not mover.color, hanging_value)
+
+
 def order_moves(board: chess.Board, moves: list[chess.Move]) -> list[chess.Move]:
     """Captures first, best captures first (MVV-LVA); quiet moves keep their given order.
 
@@ -370,6 +494,12 @@ def order_moves(board: chess.Board, moves: list[chess.Move]) -> list[chess.Move]
     orders them the way a human would scan a position first: capturing a queen with a pawn
     before capturing a pawn with a queen. See docs/IDEAS.md: "the gap between the minimax
     baseline and something respectable is mostly move ordering."
+
+    Milestone A7 tried replacing this with see() (above) - strictly more accurate, since it plays
+    the whole exchange out instead of guessing from one victim/attacker pair - but see()'s real
+    per-call cost measured too high to pay for itself here; see the comment above
+    SEE_PRUNE_THRESHOLD for the numbers. Reverted to plain MVV-LVA, which is what every prior
+    milestone's own results (through B1) were actually measured against.
     """
 
     def score(move: chess.Move) -> float:
@@ -415,6 +545,11 @@ def quiescence(board: chess.Board, alpha: float, beta: float) -> float:
     Deliberately not using the transposition table here: quiescence "depth" isn't comparable to
     the main search's remaining-depth counter, and giving it a fair place in the same table is a
     refinement this milestone leaves out to keep the addition easy to verify on its own.
+
+    Milestone A7 tried also skipping captures here whose see() came back negative (loses material
+    once the full exchange plays out) - safe in principle (stand-pat is always the fallback, and
+    quiescence only ever looks at captures anyway) but reverted along with order_moves' use of
+    see(), for the same real per-call-cost reason documented above SEE_PRUNE_THRESHOLD.
     """
     check_time()
 
@@ -515,12 +650,15 @@ def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
 
 def search_root(board: chess.Board, depth: int, moves: list[chess.Move]) -> chess.Move:
     """One complete root search at a fixed depth: score every legal move, return one of the
-    best (ties broken randomly). `moves` is precomputed once by the caller and reused across
-    every depth - MVV-LVA ordering doesn't depend on search depth, so there's no need to
-    recompute it each pass. May raise TimeUp partway through; get_move handles that by simply
-    not using this depth's result at all, not by salvaging whichever root moves it did finish -
-    a plain, easy-to-verify rule, at the cost of a little wasted work right at the moment the
-    clock runs out.
+    best (ties broken randomly). `moves`'s MVV-LVA ordering is computed once by the caller and
+    reused across every depth - that ordering doesn't depend on search depth, so there's no need
+    to recompute it each pass. get_move does mutate `moves` between depths, though (milestone A8:
+    moving the previous depth's winner to the front - see its own comment) - a genuinely
+    different move can end up tried first at the next depth, which is the whole point of it.
+
+    May raise TimeUp partway through; get_move handles that by simply not using this depth's
+    result at all, not by salvaging whichever root moves it did finish - a plain, easy-to-verify
+    rule, at the cost of a little wasted work right at the moment the clock runs out.
     """
     best_score = -math.inf
     best_moves: list[chess.Move] = []
@@ -570,6 +708,17 @@ def get_move(fen: str, time_left_ms: int) -> str:
     try:
         while depth <= MAX_DEPTH:
             best_move = search_root(board, depth, moves)
+            # Iterative-deepening move ordering (milestone A8): the move that just won at this
+            # depth is very likely still strong at the next one - trying it first there gives
+            # alpha-beta the earliest, tightest bound it can get before searching every other
+            # root move, so more of them cut off sooner. Cheap and safe: this only ever changes
+            # which order root moves are tried in, never which one ultimately gets returned -
+            # search_root still scores every move at the new depth regardless of where it sits
+            # in `moves`. moves.remove() matches by value (chess.Move defines equality on
+            # from/to/promotion), not object identity, and is O(legal move count) - a few dozen
+            # at most, negligible next to an actual search node.
+            moves.remove(best_move)
+            moves.insert(0, best_move)
             depth += 1
     except TimeUp:
         pass  # keep whatever the last fully-completed depth found; see search_root's docstring
