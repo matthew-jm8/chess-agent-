@@ -44,6 +44,7 @@ baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
 | A8 | Iterative-deepening root-move reordering | ✅ done — see below |
 | A9 | Transposition-table best-move ordering hint | ✅ done — see below |
 | A10 | Killer-move heuristic | ✅ done — see below |
+| A11 | History heuristic | ⚠️ attempted, unresolved regression, reverted — see below |
 | B0 | Full env parity (torch/numba/onnxruntime) | ✅ done on Windows — see below; Silicon Mac still pending |
 | B1 | numba-jit the evaluation | ✅ done — see below |
 | B2 | Neural-net evaluation (**stretch goal**, not required) | ⬜ optional |
@@ -416,6 +417,29 @@ game), both the pre-A10 code and this version answered in 0.2ms even at a 150ms 
 identical cost, ruling out A10's own logic and pointing instead to cumulative time pressure from
 that game's earlier tactics, the same category of finding A8 had. Snapshot:
 `versions/a10-killers/agent.py`. Full data in `game-logs/FEEDBACK.md`.
+
+### A11 — History heuristic (attempted, unresolved regression, reverted)
+
+The natural next step after A10: rank every OTHER quiet move (not a depth's killer) by a
+whole-search, depth²-weighted cutoff count per `(from_square, to_square)`, instead of leaving
+them all tied. Scored strictly below a killer and above nothing (a plain `-1.0` floor), so it
+only ever refines the bottom of the order.
+
+**Batch: 35.0% (+8 =5 -17, zero flags) vs. the pre-A11 baseline** - a real, clean regression.
+Investigated harder than any other finding tonight because three separate checks all contradicted
+it: 0/8 mismatched scores at fixed depth (ordering can't change a full-window result, only
+efficiency - confirmed directly), ~10% fewer nodes and ~13% less time at fixed depth in every one
+of 8 positions (ruling out an A7-shaped "just too slow" explanation), and a real `get_move()`
+move-choice comparison that found the two versions agreed 6/8 of the time with the 2
+disagreements splitting evenly (one clearly worse, one clearly better) - no systematic bias
+toward worse moves in that sample either. **Root cause not found; reverted anyway, out of
+caution.** The contradiction between "every targeted check says this is fine or good" and "a real
+30-game batch says otherwise" is itself the finding - something compounds across a full real game
+that none of tonight's smaller tests were shaped to catch, and this session ran out of time to
+chase it further rather than ship an unexplained regression unsupervised, two days from the
+deadline. `HISTORY`/`store_history` kept in the file, unwired - flagged for the team to revisit
+with a larger sample and fresh eyes. No version snapshot (nothing shipped differs from
+`a10-killers`). Full data in `game-logs/FEEDBACK.md`.
 
 ### B0 — Full environment parity (Windows machine)
 

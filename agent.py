@@ -3,7 +3,7 @@
 import math
 import random
 import time
-from collections.abc import Hashable, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from typing import NamedTuple
 
 import chess
@@ -177,6 +177,44 @@ def store_killer(depth: int, move: chess.Move) -> None:
         return  # already recorded here; don't duplicate it into both slots
     killers.insert(0, move)
     del killers[KILLERS_PER_DEPTH:]
+
+
+# --- History heuristic (milestone A11 - implemented, verified, NOT currently wired in) ---
+#
+# Killer moves (above) only rank the 1-2 most recent cutoffs *at one exact depth*. Every other
+# quiet move - including a killer's own understudy from three plies ago, or a move that keeps
+# causing cutoffs but never quite makes a depth's 2-slot cut - still had zero ranking among
+# itself and every other non-killer quiet move. History fixes that with a cheaper, coarser, but
+# much longer-memory signal: a running count, per (from_square, to_square) - not per full move,
+# so a knight hopping the same two squares under different circumstances still shares one count -
+# of how often that piece movement has caused a cutoff *anywhere in the whole search*, weighted
+# by depth^2 (deeper cutoffs are rarer and a stronger signal than shallow ones, and squaring is
+# the standard weighting - it separates a single deep cutoff from many shallow coincidental ones).
+#
+# Wired in, tested, and reverted: at a fixed depth with a full alpha-beta window, this measurably
+# helps (0/8 mismatched scores vs. not having it, ~10% fewer nodes, ~13% less time - ordering
+# changes efficiency, never correctness, and that held up under direct testing). But a 30-game batch
+# against the pre-A11 baseline came back 35.0% (+8 =5 -17, no flags - a clean, real signal), and
+# a real get_move() move-choice comparison (8 positions, generous shared time budget, an
+# independent fixed-depth judge) found the two versions agreed 6/8 of the time and split evenly
+# on the other 2 (one clearly worse, one clearly better) - nothing there explains a swing this
+# large either. Root cause not found, not guessed at further - reverted out of caution rather
+# than shipped on an unresolved contradiction between "the mechanism looks sound" and "the batch
+# says otherwise." Kept here, unwired, as verified-but-unresolved groundwork - see
+# game-logs/FEEDBACK.md's A11 section for the full investigation before touching this again.
+HISTORY: dict[tuple[chess.Square, chess.Square], int] = {}
+HISTORY_CAP = 10_000  # calibrated so even one very-deep cutoff (depth 40 -> 1,600) doesn't need
+# many repeats to saturate the scaled range below - deliberately coarse, not finely tuned; this
+# only has to distinguish "seen a lot" from "never seen," not rank precisely against itself.
+_EMPTY_HISTORY: Mapping[tuple[chess.Square, chess.Square], int] = {}
+
+
+def store_history(move: chess.Move, depth: int) -> None:
+    """Bump the (from, to) pair's cutoff count. Same caller/scope restriction as store_killer:
+    only quiet moves, only on an actual beta cutoff.
+    """
+    key = (move.from_square, move.to_square)
+    HISTORY[key] = HISTORY.get(key, 0) + depth * depth
 
 
 # --- Piece-square tables (milestone A6) ---
@@ -530,6 +568,7 @@ def order_moves(
     moves: list[chess.Move],
     tt_move: chess.Move | None = None,
     killers: Sequence[chess.Move] = (),
+    history: Mapping[tuple[chess.Square, chess.Square], int] = _EMPTY_HISTORY,
 ) -> list[chess.Move]:
     """Captures first, best captures first (MVV-LVA); quiet moves keep their given order.
     `tt_move`, when given, is tried before everything else, captures included. `killers`, when
@@ -557,6 +596,16 @@ def order_moves(
     "worst real capture" (0.0 - a king recapturing a pawn, ATTACKER_VALUE's own extreme) and
     "ordinary quiet move" (-1.0), so a killer always sorts after every capture but ahead of every
     other quiet move.
+
+    Milestone A11 adds `history`: every OTHER quiet move (not this depth's killer) used to tie at
+    a flat -1.0 with zero ranking among them - history breaks that tie using each move's
+    whole-search cutoff count (see store_history), scaled into (-1.0, -0.6] so it can never reach
+    a killer's -0.5 or any real capture's >= 0.0 - it only ever refines the bottom of the order,
+    never jumps the queue past a stronger signal. No caller currently passes one (defaults to
+    `_EMPTY_HISTORY`) - verified correct and even faster/more-efficient at a fixed depth, but
+    reverted after a real batch regression neither that nor a real-game move-choice comparison
+    could explain; see the comment above HISTORY's definition and game-logs/FEEDBACK.md's A11
+    section for the full, unresolved investigation.
     """
 
     def score(move: chess.Move) -> float:
@@ -565,7 +614,8 @@ def order_moves(
         if not board.is_capture(move):
             if move in killers:
                 return -0.5  # milestone A10: between "quiet" (-1.0) and any real capture (>= 0.0)
-            return -1.0  # quiet moves sort after every capture
+            history_count = history.get((move.from_square, move.to_square), 0)
+            return -1.0 + 0.4 * min(history_count, HISTORY_CAP) / HISTORY_CAP  # milestone A11
         attacker = board.piece_at(move.from_square)
         assert attacker is not None
         if board.is_en_passant(move):
@@ -709,9 +759,9 @@ def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
             if best > alpha:
                 alpha = best
             if alpha >= beta:
-                # milestone A10: only quiet moves are worth remembering as killers - a capture
-                # that causes a cutoff is already found again next time via MVV-LVA/SEE ordering,
-                # which ranks captures far more precisely than a 2-slot killer table could.
+                # milestones A10/A11: only quiet moves are worth remembering as killers/history -
+                # a capture that causes a cutoff is already found again next time via MVV-LVA/SEE
+                # ordering, which ranks captures far more precisely than either table could.
                 if not board.is_capture(move):
                     store_killer(depth, move)
                 break  # beta cutoff: the opponent already has a better option upstream
@@ -774,6 +824,8 @@ def get_move(fen: str, time_left_ms: int) -> str:
     # accumulate get_move calls that may have nothing to do with the position at hand now.
     for killers in KILLER_MOVES:
         killers.clear()
+    # Note: HISTORY (milestone A11) is deliberately NOT reset/used here - it's currently unwired,
+    # see the comment above its definition for why.
     board = chess.Board(fen)
     moves = order_moves(board, list(board.legal_moves))
 

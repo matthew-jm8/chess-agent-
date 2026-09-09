@@ -759,3 +759,51 @@ traced move-by-move here, since the two versions' actual games diverge from very
 aren't directly comparable position-by-position beyond the flagging position itself.
 
 Snapshot: `versions/a10-killers/agent.py`. Full data: `game-logs/a10-killers-vs-a9/`.
+
+## Milestone A11 — history heuristic (attempted, unresolved regression, reverted)
+
+The natural next step after killer moves: A10 only ranks the 1-2 most recent cutoffs *at one
+exact depth*, so every other quiet move - including a killer's own understudy, or a move that
+keeps causing cutoffs without ever making a depth's 2-slot cut - still tied at a flat `-1.0` with
+zero ranking among them. History adds a coarser, longer-memory signal: a running count per
+`(from_square, to_square)`, weighted by depth² (deeper cutoffs are rarer, stronger evidence),
+accumulated across the *whole* search rather than one depth. Scored into `(-1.0, -0.6]` in
+`order_moves` - strictly below a killer's `-0.5` and any real capture's `>= 0.0`, so it can only
+ever refine the bottom of the order, never jump ahead of a stronger signal. Reset every
+`get_move()` call, same reasoning as killers.
+
+**Batch (30 games, fast clock, vs. the pre-A11 baseline `a10-killers`): 35.0% (+8 =5 -17, zero
+flags)** - a real, clean regression, not a timing artifact. Investigated with more rigor than any
+prior finding tonight, because the mechanism itself looked sound and the result contradicted it:
+
+1. **Not a correctness bug.** Move ordering can only change alpha-beta's *efficiency*, never its
+   *result*, under a full window - checked directly: 0/8 mismatched scores between old and new at
+   a fixed depth across 8 random positions.
+2. **Not a speed problem** (ruling out an A7-shaped explanation). At the same fixed depth, history
+   consistently searched *fewer* nodes and finished *faster* - about 10% fewer nodes, 13% less
+   wall time, across all 8 positions, never worse in a single one.
+3. **Not an obvious move-quality problem either**, at least not in a small, targeted sample: a
+   real `get_move()` comparison (same generous time budget, both versions, 8 positions) found
+   old and new agreed on the move 6 of 8 times; the 2 disagreements split evenly - one where
+   history's choice was judged clearly worse by an independent fixed-depth search (607 -> 551,
+   about half a pawn), one where it was judged clearly *better* (89 -> 115) - no systematic bias
+   toward worse moves showed up here.
+
+**Root cause not found - reverted anyway, out of caution rather than confidence in an
+explanation.** Three separate, reasonably thorough checks all came back "this looks fine or even
+good," yet the one measurement that actually matters (a real 30-game batch) says otherwise
+clearly. That contradiction itself is the finding: something about history's effect compounds
+across a full real game (many real moves, `HISTORY` persisting and accumulating across every
+iterative-deepening pass within each one) in a way none of tonight's smaller, more targeted tests
+were shaped to catch - and this session ran out of time to chase it further rather than ship an
+unexplained regression on an unattended machine two days before the deadline. Reverted
+`order_moves`/`negamax`/`get_move`'s use of it; kept `HISTORY`/`store_history` in the file,
+unwired, as verified-but-unresolved groundwork - not deleted, since the mechanism itself passed
+every check thrown at it except the one that counts. **Flagged for the team: worth a fresh look
+with a larger sample and fresh eyes, not a rabbit hole for 4am alone.**
+
+No version snapshot (nothing shipped differs from `a10-killers` - `order_moves`/`negamax`/
+`get_move` reverted to that version's exact logic; `ruff`/`mypy`/the eval regression check/gate
+sanity games all still clean). Full data: `game-logs/a11-history-vs-a10/` (the batch), this
+session's own diagnostic scripts' output recorded here rather than as separate files (matching
+how every other same-night flag/regression investigation was written up).
