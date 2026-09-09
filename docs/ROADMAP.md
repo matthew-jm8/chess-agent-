@@ -43,6 +43,7 @@ baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
 | A7 | Static Exchange Evaluation (move ordering + quiescence pruning) | ⚠️ attempted, reverted — see below |
 | A8 | Iterative-deepening root-move reordering | ✅ done — see below |
 | A9 | Transposition-table best-move ordering hint | ✅ done — see below |
+| A10 | Killer-move heuristic | ✅ done — see below |
 | B0 | Full env parity (torch/numba/onnxruntime) | ✅ done on Windows — see below; Silicon Mac still pending |
 | B1 | numba-jit the evaluation | ✅ done — see below |
 | B2 | Neural-net evaluation (**stretch goal**, not required) | ⬜ optional |
@@ -392,6 +393,29 @@ with well-formed best moves (906 of 3,901 - depth-0 entries never get one, by de
 this session's three search-improvement attempts, a real margin above 50% rather than a coin
 flip. One flag in the batch belonged to the opponent, confirmed directly in the batch's own
 summary data. Snapshot: `versions/a9-ttmove/agent.py`. Full data in `game-logs/FEEDBACK.md`.
+
+### A10 — Killer-move heuristic
+
+The cheaper, cross-branch complement to A9: a quiet move that caused a beta cutoff at a given
+remaining-depth is disproportionately likely to be strong in a sibling branch at that same depth,
+even without an exact transposition. A 2-slot-per-depth table records cutoff-causing quiet moves;
+`order_moves` ranks a depth's killers right after every capture, ahead of any other quiet move.
+Reset every `get_move()` call, deliberately unlike the TT's cross-game persistence - a killer is a
+far more perishable signal than an actual transposition.
+
+Verified with three direct checks before batch-testing: killer-first-after-captures ordering,
+real-search population of the table (respecting the 2-slot cap, well-formed moves), and that
+`get_move()` genuinely clears stale entries at the start of a call (not just "happens to look
+empty" - checked with an entry planted at an unreachable depth).
+
+**Batch: 71.7% (+16 =11 -3) vs. the pre-A10 baseline** - the strongest result of any
+search-improvement attempt this session, clearly ahead of both A8 (48.3%) and A9 (58.3%). One
+self-inflicted flag was investigated the same way as every other flag tonight: at the exact
+position (46 legal moves, in a tactically sharp middlegame that grew out of another `3.Qg4`-trap
+game), both the pre-A10 code and this version answered in 0.2ms even at a 150ms budget -
+identical cost, ruling out A10's own logic and pointing instead to cumulative time pressure from
+that game's earlier tactics, the same category of finding A8 had. Snapshot:
+`versions/a10-killers/agent.py`. Full data in `game-logs/FEEDBACK.md`.
 
 ### B0 — Full environment parity (Windows machine)
 

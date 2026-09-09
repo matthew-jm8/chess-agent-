@@ -715,3 +715,47 @@ regression, A8 was close to neutral at 48.3%). One flag in the batch belonged to
 self-inflicted issue.
 
 Snapshot: `versions/a9-ttmove/agent.py`. Full data: `game-logs/a9-ttmove-vs-a8/`.
+
+## Milestone A10 — killer-move heuristic
+
+A9 gave the TT move top priority, but a TT hint only fires on an exact transposition - most
+nodes never get one, and their quiet moves still had zero ranking beyond raw generation order
+(`order_moves`'s flat `-1.0` for every non-capture). Killer moves are the standard, cheaper
+complement: a quiet move that caused a beta cutoff at a given remaining-depth recently is
+disproportionately likely to be strong again in a *sibling* branch at that same depth - not
+because it's the same position, but because the same tactical idea (a check, a threat, an escape)
+often recurs nearby in the tree. Added a 2-slot-per-depth table (`KILLER_MOVES`, indexed by
+remaining depth, the same value `negamax` is already called with); a quiet move that causes a
+cutoff gets recorded there, and `order_moves` ranks a depth's killers right after every capture,
+ahead of any other quiet move. Reset at the start of every `get_move()` call - deliberately unlike
+the TT, which persists across the whole game on purpose (see its own comment); a killer only
+claims a move was strong *recently, near this depth*, a far more perishable signal than an actual
+transposition.
+
+**Verified directly before batch-testing, three separate checks:** `order_moves` puts a given
+killer right after a real capture and ahead of an ordinary quiet move (checked with an actual
+capture available in the test position, not assumed). A real depth-4 search from the starting
+position populates `KILLER_MOVES` with well-formed legal moves, respecting the 2-slot cap.
+`get_move()` actually clears stale entries at the start of a call - checked by injecting a killer
+at `MAX_DEPTH` (a depth an ~0-budget search has no way to reach) and confirming it's gone
+afterward, so the only way it could disappear is the reset itself, not that call's own search
+overwriting it.
+
+**Batch (30 games, fast clock, vs. the pre-A10 baseline `a9-ttmove`): 71.7% (+16 =11 -3)** - the
+strongest result of any search-improvement attempt tonight, a real margin well above both A8's
+near-neutral 48.3% and A9's already-positive 58.3%.
+
+**One real self-inflicted flag (game 6, 41 plies) - investigated the same way as every other flag
+tonight, not waved off just because the headline number is good.** This game is itself another
+instance of the `3.Qg4` opening trap (documented since B1) that spiraled into a tactically sharp
+middlegame (two captures and several piece jumps between moves 14-20). At the exact position
+where black flagged (FEN `r3rk2/pppb2pp/8/6R1/nbBnp3/1P6/P2P1PPP/1RB3K1 b - - 0 21`, 46 legal
+moves), both the pre-A10 code and this version answered in **0.2ms even at a 150ms budget** -
+identical, negligible cost for both, ruling out A10's own logic as directly responsible (a killer
+lookup is a membership check against at most 2 moves; there's no plausible mechanism for it to
+cost real time). Most likely cumulative time pressure from the tactically demanding stretch
+earlier in this specific game, the same category of finding as A8's flag - not exhaustively
+traced move-by-move here, since the two versions' actual games diverge from very early on and
+aren't directly comparable position-by-position beyond the flagging position itself.
+
+Snapshot: `versions/a10-killers/agent.py`. Full data: `game-logs/a10-killers-vs-a9/`.

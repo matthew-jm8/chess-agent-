@@ -3,7 +3,7 @@
 import math
 import random
 import time
-from collections.abc import Hashable
+from collections.abc import Hashable, Sequence
 from typing import NamedTuple
 
 import chess
@@ -145,6 +145,38 @@ def store_tt(
     if len(TT) >= TT_MAX_ENTRIES:
         TT.clear()
     TT[key] = TTEntry(depth, score, flag, best_move)
+
+
+# --- Killer moves (milestone A10) ---
+#
+# A9 gave the TT move top priority, but that only fires on an exact transposition (or the same
+# position reached again, shallower, later in the game) - most nodes have no TT hint at all, and
+# their quiet moves still had zero ranking beyond raw generation order (order_moves' score()
+# giving every quiet move the same flat -1.0). Killer moves plug that gap with a much cheaper
+# signal than a full transposition: a quiet move that caused a beta cutoff *at this same distance
+# from the leaves* recently is disproportionately likely to be strong again in a sibling node -
+# not because it's the same position, but because the same tactical idea (a check, a threat, an
+# escape) often recurs across nearby branches of the tree.
+#
+# Indexed by remaining depth (the same "depth" negamax is already called with), not distance from
+# the root - simpler, and standard practice in engines this size; it means a killer recorded in
+# one branch of the tree can help order a sibling branch at the same depth, which is exactly the
+# cross-branch reuse this heuristic is for.
+KILLER_MOVES: list[list[chess.Move]] = [[] for _ in range(MAX_DEPTH + 1)]
+KILLERS_PER_DEPTH = 2  # the standard slot count - enough to catch a second good idea without the
+# list becoming stale as fast as a single slot would.
+
+
+def store_killer(depth: int, move: chess.Move) -> None:
+    """Record `move` as a cutoff-causing quiet move at `depth`, most-recent first. Only ever
+    called for quiet moves (see negamax) - captures already have MVV-LVA/SEE-quality ordering of
+    their own and don't need this.
+    """
+    killers = KILLER_MOVES[depth]
+    if move in killers:
+        return  # already recorded here; don't duplicate it into both slots
+    killers.insert(0, move)
+    del killers[KILLERS_PER_DEPTH:]
 
 
 # --- Piece-square tables (milestone A6) ---
@@ -494,10 +526,14 @@ def see(board: chess.Board, move: chess.Move) -> float:
 
 
 def order_moves(
-    board: chess.Board, moves: list[chess.Move], tt_move: chess.Move | None = None
+    board: chess.Board,
+    moves: list[chess.Move],
+    tt_move: chess.Move | None = None,
+    killers: Sequence[chess.Move] = (),
 ) -> list[chess.Move]:
     """Captures first, best captures first (MVV-LVA); quiet moves keep their given order.
-    `tt_move`, when given, is tried before everything else, captures included.
+    `tt_move`, when given, is tried before everything else, captures included. `killers`, when
+    given, are tried after every capture but before any other quiet move.
 
     Alpha-beta only prunes once it has already found a move good enough to trigger a cutoff -
     so the earlier a strong move is tried, the more of the tree gets skipped. Captures are the
@@ -515,12 +551,20 @@ def order_moves(
     Milestone A9 adds `tt_move`: a move a past search already found good here (see negamax's TT
     probe) is a far stronger ordering signal than any static guess about it, MVV-LVA included -
     it beats even a queen-takes-queen capture to the front of the list.
+
+    Milestone A10 adds `killers`: quiet moves that caused a cutoff at this same depth recently
+    (see store_killer) - a cheaper, cross-branch cousin of the TT move. Scored strictly between
+    "worst real capture" (0.0 - a king recapturing a pawn, ATTACKER_VALUE's own extreme) and
+    "ordinary quiet move" (-1.0), so a killer always sorts after every capture but ahead of every
+    other quiet move.
     """
 
     def score(move: chess.Move) -> float:
         if move == tt_move:
             return math.inf  # milestone A9: known-good beats every static guess about a move
         if not board.is_capture(move):
+            if move in killers:
+                return -0.5  # milestone A10: between "quiet" (-1.0) and any real capture (>= 0.0)
             return -1.0  # quiet moves sort after every capture
         attacker = board.piece_at(move.from_square)
         assert attacker is not None
@@ -655,7 +699,7 @@ def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
         best = quiescence(board, alpha, beta)
     else:
         best = -math.inf
-        for move in order_moves(board, moves, tt_move):
+        for move in order_moves(board, moves, tt_move, KILLER_MOVES[depth]):
             board.push(move)
             score = -negamax(board, depth - 1, -beta, -alpha)
             board.pop()
@@ -665,6 +709,11 @@ def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
             if best > alpha:
                 alpha = best
             if alpha >= beta:
+                # milestone A10: only quiet moves are worth remembering as killers - a capture
+                # that causes a cutoff is already found again next time via MVV-LVA/SEE ordering,
+                # which ranks captures far more precisely than a 2-slot killer table could.
+                if not board.is_capture(move):
+                    store_killer(depth, move)
                 break  # beta cutoff: the opponent already has a better option upstream
 
     flag = EXACT
@@ -718,6 +767,13 @@ def get_move(fen: str, time_left_ms: int) -> str:
     during rated games and shown back to you in the validation log.
     """
     global DEADLINE, OWN_MOVES_PLAYED
+    # Milestone A10: killer moves reset every real move, unlike TT (which deliberately persists
+    # across the whole game - see its own comment). A killer only claims a quiet move was strong
+    # *recently, near this depth* - a much weaker, more perishable signal than an actual
+    # transposition, and standard practice resets it fresh per search rather than letting it
+    # accumulate get_move calls that may have nothing to do with the position at hand now.
+    for killers in KILLER_MOVES:
+        killers.clear()
     board = chess.Board(fen)
     moves = order_moves(board, list(board.legal_moves))
 
