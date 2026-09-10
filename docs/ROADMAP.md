@@ -129,9 +129,15 @@ only if it actually beats the classical engine in an arena run.
 ## Phase C — submission safety buffer (last 1–2 days before Sept 11)
 
 - `make gate` (ruff + mypy strict + quick sanity games) clean.
-- Stress-test edge cases: no legal moves, promotion, underpromotion, en passant, insufficient
-  material.
-- If torch is used anywhere: `torch.set_num_threads(1)` at import.
+- ✅ Stress-test edge cases: no legal moves, promotion, underpromotion, en passant, insufficient
+  material — 22/22 checks pass against the real `agent.py`. One finding, not yet fixed (a real
+  code edit, held for review rather than applied unilaterally): calling `get_move()` on an
+  already-checkmated/stalemated position raises an uncaught `IndexError` (`best_move = moves[0]`
+  on an empty legal-move list) — should never trigger in practice since the harness ends the
+  game before calling `get_move()` again, but a one-line defensive guard would close it for free.
+- If torch is used anywhere: `torch.set_num_threads(1)` at import — N/A currently, root
+  `agent.py` doesn't import torch (classical eval only; B2's NNUE path uses onnxruntime for
+  inference and is not shipped).
 - `make zip`; confirm `submission.zip` is under the 50 MB cap with `agent.py` at the root.
 - Run the platform's required two smoke games (one per color) with days of margin left.
 

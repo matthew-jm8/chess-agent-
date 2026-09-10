@@ -918,3 +918,22 @@ this round, at least at the search depths a 120s-class clock reaches.
 less decisive evaluation signal steering it into repeated positions more often - not confirmed).
 Neither variant is close to `a10-killers` yet; both remain experimental, un-promoted candidates,
 not a replacement for the shipped classical path.
+
+## Phase C — edge-case stress test
+
+Ran against the real root `agent.py` (not a snapshot): checkmate/stalemate (0 legal moves, with
+and without check), pawn promotion (all 4 piece types, verified legal before testing rather than
+assumed), en passant (target square + capture move verified present), and insufficient material
+(K-vs-K, K+N-vs-K, K+B-vs-K) - every precondition checked programmatically via `python-chess`
+itself first, not taken on faith from a remembered puzzle position. **22/22 checks pass** -
+`get_move()` returns well-formed legal UCI moves (including promotions and the en passant
+capture) on every position that has legal moves, and `evaluate()` doesn't choke on positions with
+an extra promoted piece of any type or a just-played en passant capture.
+
+One real finding, **not fixed** (a genuine code change to `agent.py`, held for review rather than
+applied unilaterally per the "only edit without approval if it's a proven improvement" standard):
+calling `get_move()` on an already-checkmated or stalemated position raises an uncaught
+`IndexError` - `best_move = moves[0]` on an empty legal-move list. This should never actually
+trigger in real play (the harness ends the game before calling `get_move()` again on a terminal
+position), so it's a defensive gap rather than a live bug, but a one-line guard would close it
+for free if the team wants it.
