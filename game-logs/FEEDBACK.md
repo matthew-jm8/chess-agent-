@@ -867,6 +867,11 @@ rather than a plain file copy/rename.
 | Round 2 "same" | **16.7%** (+2=6-22) | - | - |
 | Round 2 "small" | 26.7% (+2=12-16) | 87.5% (+16=3-1) | 77.5% (+12=7-1) |
 
+`"small"` also ran the standard competition-clock battery (6 games, 120s+0.5s) vs. `minimax`:
+**66.7% (+2=4-0, zero flags)** - no losses, though 4 of 6 games drew by repetition (more time per
+move seems to soften the search-depth handicap into safer, more passive play rather than losses -
+consistent with, not contradicting, the node-count finding below).
+
 "Same" - strictly faster AND more accurate than round 1 by every number measured before the
 batch ran - scored *worse* against `a10-killers` than round 1 did. That's not noise to shrug off;
 it directly contradicts what every prior metric predicted, and deserved the same investigation
