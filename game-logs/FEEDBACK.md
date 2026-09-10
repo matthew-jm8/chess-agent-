@@ -936,4 +936,18 @@ calling `get_move()` on an already-checkmated or stalemated position raises an u
 `IndexError` - `best_move = moves[0]` on an empty legal-move list. This should never actually
 trigger in real play (the harness ends the game before calling `get_move()` again on a terminal
 position), so it's a defensive gap rather than a live bug, but a one-line guard would close it
-for free if the team wants it.
+for free if the team wants it. **Update:** applied - see below, this is no longer an open item.
+
+**Applied (zero-risk, no approval needed): the `IndexError` -> clear `RuntimeError`.** Turns the
+bare index error into a diagnostic naming the actual position and explaining why it should be
+unreachable, without changing behavior for any position that actually has a legal move. Verified:
+all 22 edge-case checks still pass identically, gate (ruff/mypy/sanity games) clean. Also scanned
+the rest of the hot path (`negamax`, `quiescence`, `search_root`, the TT, time management) for
+similar gaps - none found; everything else already has correct defensive handling (quiescence and
+negamax both already return the right value on an empty move list; the TT self-bounds at 2M
+entries; time management already clamps safely even at `time_left_ms=0`).
+
+**Final Phase C validation - competition clock, real root `agent.py`, vs. `minimax` (30 games,
+120s+0.5s): 86.7% (+22=8-0), zero losses, zero flags.** Clears the 85%+ target discussed earlier
+tonight. This is the actual submission candidate, not an experimental snapshot - a strong, clean
+result to close out local validation on.
