@@ -829,6 +829,18 @@ def get_move(fen: str, time_left_ms: int) -> str:
     board = chess.Board(fen)
     moves = order_moves(board, list(board.legal_moves))
 
+    # Phase C edge-case stress test (2026-09-10): the platform should never call get_move() on a
+    # position with no legal moves (checkmate/stalemate - the game is already over by then), so
+    # this should be unreachable in real play. Defensive only: turns a bare, confusing
+    # `IndexError: list index out of range` on `moves[0]` below into a clear diagnostic if it
+    # ever somehow is reached - does not change behavior for any position that actually has a
+    # legal move, i.e. every real position this function is ever meant to be called on.
+    if not moves:
+        raise RuntimeError(
+            f"get_move called with no legal moves in position {fen!r} - the harness should "
+            "never call get_move on a position where the game is already over"
+        )
+
     # Ready instantly, before any real searching happens: the answer if the clock is so tight
     # we can't even finish a depth-1 pass. docs/IDEAS.md is explicit that a flag - not a bad
     # move - is the most common self-inflicted loss, so there must always be *something* legal
