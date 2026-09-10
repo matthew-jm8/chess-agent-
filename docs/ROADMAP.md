@@ -48,7 +48,7 @@ baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
 | B0 | Full env parity (torch/numba/onnxruntime) | ✅ done on Windows — see below; Silicon Mac still pending |
 | B1 | numba-jit the evaluation | ✅ done — see below |
 | B2 | Neural-net evaluation (**stretch goal**, not required) | 🧪 experimental, not shipped — see below |
-| C | Submission safety buffer (gate, edge cases, zip, smoke games) | ⬜ last 1-2 days |
+| C | Submission safety buffer (gate, edge cases, zip, smoke games) | ✅ everything locally-checkable done — only the platform's own smoke-game upload remains, needs the team |
 
 ## How every milestone gets measured
 
@@ -128,18 +128,27 @@ only if it actually beats the classical engine in an arena run.
 
 ## Phase C — submission safety buffer (last 1–2 days before Sept 11)
 
-- `make gate` (ruff + mypy strict + quick sanity games) clean.
+- ✅ `make gate` equivalent (`make` isn't installed in this dev environment - ran its three steps
+  directly): `ruff check .` clean, `mypy` clean (9 source files), 2-game sanity arena vs.
+  `baselines/random` completed with no flags/crashes (75.0%, +1=1-0).
 - ✅ Stress-test edge cases: no legal moves, promotion, underpromotion, en passant, insufficient
   material — 22/22 checks pass against the real `agent.py`. One finding, not yet fixed (a real
   code edit, held for review rather than applied unilaterally): calling `get_move()` on an
   already-checkmated/stalemated position raises an uncaught `IndexError` (`best_move = moves[0]`
   on an empty legal-move list) — should never trigger in practice since the harness ends the
   game before calling `get_move()` again, but a one-line defensive guard would close it for free.
-- If torch is used anywhere: `torch.set_num_threads(1)` at import — N/A currently, root
-  `agent.py` doesn't import torch (classical eval only; B2's NNUE path uses onnxruntime for
-  inference and is not shipped).
-- `make zip`; confirm `submission.zip` is under the 50 MB cap with `agent.py` at the root.
-- Run the platform's required two smoke games (one per color) with days of margin left.
+- ✅ `torch.set_num_threads(1)` at import — N/A currently, root `agent.py` doesn't import torch
+  (classical eval only; B2's NNUE path uses onnxruntime for inference and is not shipped). Revisit
+  this line if/when any torch-touching path is ever promoted into root `agent.py`.
+- ✅ `make zip` equivalent (`python -m harness.package`): `submission.zip` is 16,753 bytes zipped
+  (46,391 unzipped) — comfortably under the 50 MB cap — containing exactly `agent.py` at the
+  archive root, confirmed via `unzip -l`.
+- ⬜ **Run the platform's required two smoke games (one per color) — this is the one item that
+  cannot be done from here.** It means uploading `submission.zip` to the actual AI Chessathon
+  platform and letting its own validation pipeline play the two required games; that requires
+  platform credentials/access this session doesn't have. Everything locally checkable is done and
+  clean — this is the one remaining step for the team to do directly on the competition site,
+  with days of margin left as the checklist recommends.
 
 ---
 
