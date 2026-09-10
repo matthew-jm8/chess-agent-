@@ -807,3 +807,109 @@ No version snapshot (nothing shipped differs from `a10-killers` - `order_moves`/
 sanity games all still clean). Full data: `game-logs/a11-history-vs-a10/` (the batch), this
 session's own diagnostic scripts' output recorded here rather than as separate files (matching
 how every other same-night flag/regression investigation was written up).
+
+## Milestone B2, round 2 — deeper/denser training data, a real speed fix, and a genuine puzzle
+
+Round 1 (12,000 positions, depth-2 labels) lost badly to `a10-killers` (25.0%), traced to the
+NNUE eval costing ~15.5x the classical eval per call - not an accuracy problem. Round 2 attacked
+both halves of that at once: a real speed fix, and a real data-quality upgrade. The two didn't
+combine the way the numbers alone predicted, and chasing down why is the most useful thing this
+section has to say - a case study in "measure the actual outcome, not the inputs you expect to
+produce it."
+
+**The speed fix (kept - a proven, unambiguous improvement, same bar as B1's own eval speedup):**
+`_nnue_features` (turns a `chess.Board` into the net's 768 input numbers) was a pure-Python loop
+over `board.piece_map()` - exactly the dict-construction cost B1 found and fixed for the classical
+eval, just not yet applied here. Rewrote it as one `@njit` pass over the board's raw bitboards
+(same technique as `_evaluate_bitboards_jit`), verified byte-identical to the old encoder across
+~8,000 real-game positions before trusting it. Measured: encoding dropped from 27.3us to
+5.2us/call. Combined with tuning onnxruntime's `SessionOptions` (single-threaded - the platform
+gives us one core, so ORT's default multi-thread pool is pure overhead; disabled the memory-
+pattern arena, which optimizes for varying batch sizes we never use) for another ~10%, the whole
+NNUE eval call dropped from **15.5x to 7.6x the classical eval's cost**, verified via the same
+isolated-benchmark technique as every other speed claim tonight.
+
+**The data upgrade:** generated a new dataset - 20,000 positions (up from 12,000), sampled every
+2nd ply instead of every 4th, labeled at depth 3 instead of depth 2 (using `a10-killers`, the
+strongest classical engine, as the labeling teacher - directly the "use a10-killers to improve
+B2" idea raised earlier), drawn from all 824 games played so far tonight. Generation itself hit a
+real problem worth recording: the first attempt only wrote output once, at the very end, with no
+progress visibility - after 32 minutes and zero sign of life (vs. ~7.5 min expected from a quick
+benchmark), it was killed and rewritten to checkpoint every single position to disk immediately
+and log progress every 100 - a real design flaw caught before it could cost hours of unrecoverable
+overnight compute, not just a speed tweak. The rewritten version completed cleanly: 20,000
+positions in 4,001s (~5.0 pos/s, real games take longer per position than the random-move
+benchmark predicted, confirming the concern).
+
+Trained two architectures on it, 500 epochs, tracking the best validation checkpoint rather than
+trusting the final epoch (the "same" architecture visibly overfits past epoch 225 - train RMSE
+kept falling to 58 while validation rose back to 254; best-checkpoint tracking caught this
+automatically):
+
+| Model | Shape | Best epoch | Val RMSE | Eval cost vs. classical |
+|---|---|---|---|---|
+| Round 1 (reference) | 768-256-32-1 | - | 264.7 (depth-2 labels) | 15.5x |
+| Round 2 "same" | 768-256-32-1 | 225 | **235.0** (depth-3 labels) | 7.6x |
+| Round 2 "small" | 768-128-1 | 498 | 260.8 (depth-3 labels) | 5.6x |
+
+Both exported to ONNX and reverified against raw torch output (max diff 0.0002-0.0003). One real
+bug found and fixed along the way: renaming an exported `.onnx` file after the fact breaks it,
+because the external-weights filename is embedded *inside* the file's own metadata, not derived
+from its actual name on disk - fixed by using `onnx.load_model_from_string` + `onnx.save(...,
+location=...)` to properly rewrite that reference when relocating into each version folder,
+rather than a plain file copy/rename.
+
+**The batch results were a genuine surprise:**
+
+| Agent | vs. `a10-killers` (30 games, fast) | vs. `greedy` (20, fast) | vs. `minimax` (20, fast) |
+|---|---|---|---|
+| Round 1 | 25.0% (+4=7-19) | - | 60.0% (+7=10-3) |
+| Round 2 "same" | **16.7%** (+2=6-22) | - | - |
+| Round 2 "small" | 26.7% (+2=12-16) | 87.5% (+16=3-1) | 77.5% (+12=7-1) |
+
+"Same" - strictly faster AND more accurate than round 1 by every number measured before the
+batch ran - scored *worse* against `a10-killers` than round 1 did. That's not noise to shrug off;
+it directly contradicts what every prior metric predicted, and deserved the same investigation
+rigor as A11's regression rather than a shrug.
+
+**Investigation.** Profiled a real `get_move()` call (`cProfile`, competition-clock-equivalent
+budget, three representative positions) for both `a10-killers` and "same". First finding, and
+useful on its own: for the classical engine, `evaluate()` doesn't even make the top 15 functions
+by cumulative time - `python-chess`'s own move-generation machinery (`generate_legal_moves`,
+`generate_pseudo_legal_moves`, `_is_safe`, `scan_reversed`) is ~70% of total search time. B1's
+eval speedup years ago already made classical eval a non-issue; it was never the bottleneck this
+session assumed it might still be.
+
+For "same", `evaluate()` consumed 34-59% of total search time - and its own reported cost per
+call (100-190us, extracted precisely via `pstats`, not eyeballed) was 3-5x higher than the
+34.49us/call the isolated tight-loop benchmark predicted. Cross-checked this against the
+classical eval's own profiled-vs-isolated numbers (15.9us profiled vs. ~4.5us isolated - also
+inflated, just less dramatically) and concluded `cProfile`'s own per-call instrumentation
+overhead (this search makes 5-7 million function calls per move) was distorting the *absolute*
+numbers for both agents - a real caveat, not a reason to distrust the *relative* comparison
+between them under identical instrumentation.
+
+To get a clean, non-distorted number, re-measured with a plain call-counter (monkeypatching
+`evaluate()` at runtime, zero profiling overhead) instead of `cProfile`, across the same three
+positions, same simulated competition-clock budget:
+
+| Position | `a10-killers` nodes | "same" nodes | "small" nodes |
+|---|---|---|---|
+| Opening | 26,437 | 18,373 (70%) | 20,191 (76%) |
+| Middlegame (tactical) | 24,916 | 20,836 (84%) | 22,679 (91%) |
+| Endgame | 20,796 | 18,683 (90%) | 18,540 (89%) |
+
+**Conclusion: even at 7.6x the classical eval's cost, NNUE still reaches only 70-90% of the
+classical engine's node count in the same time budget** - a real, meaningful search-depth
+handicap that the accuracy improvement (RMSE 235.0 vs. 264.7) wasn't enough to pay for. "Small" -
+less accurate but reaching more nodes than "same" in 2 of 3 positions - backs this up directly:
+it beat "same" head-to-head in every comparison run (26.7% vs. 16.7% vs. `a10-killers`), despite
+being the *less accurate* of the two nets. Depth is currently worth more than the accuracy gained
+this round, at least at the search depths a 120s-class clock reaches.
+
+**Kept as the front-running NNUE candidate**: `versions/b2-nnue-small`, not `versions/b2-nnue`
+("same") - one open question worth the team's attention: "small" drew by threefold repetition in
+12/30 games against `a10-killers`, exactly double "same"'s 6/30, not yet explained (possibly a
+less decisive evaluation signal steering it into repeated positions more often - not confirmed).
+Neither variant is close to `a10-killers` yet; both remain experimental, un-promoted candidates,
+not a replacement for the shipped classical path.

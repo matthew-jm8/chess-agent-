@@ -47,7 +47,7 @@ baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
 | A11 | History heuristic | ⚠️ attempted, unresolved regression, reverted — see below |
 | B0 | Full env parity (torch/numba/onnxruntime) | ✅ done on Windows — see below; Silicon Mac still pending |
 | B1 | numba-jit the evaluation | ✅ done — see below |
-| B2 | Neural-net evaluation (**stretch goal**, not required) | ⬜ optional |
+| B2 | Neural-net evaluation (**stretch goal**, not required) | 🧪 experimental, not shipped — see below |
 | C | Submission safety buffer (gate, edge cases, zip, smoke games) | ⬜ last 1-2 days |
 
 ## How every milestone gets measured
@@ -501,3 +501,31 @@ forecast of whether it fits the remaining budget (confirmed present in `v6-pst` 
 magnitude, via direct depth-by-depth timing — not something B1 introduced).
 
 Snapshot: `versions/v7-numba-eval/agent.py`.
+
+### B2 — neural-net evaluation (stretch goal, experimental, not shipped)
+
+A small MLP (768 binary features → hidden layers → 1 score) trained on positions labeled by the
+classical engine's own search, exported to ONNX, run via `onnxruntime`. Two rounds so far, full
+narrative and exact numbers in `game-logs/FEEDBACK.md`; summary here.
+
+**Round 1**: 12,000 positions, depth-2 labels. Lost badly to `a10-killers` (25.0%), traced to the
+NNUE eval costing ~15.5x the classical eval per call.
+
+**Round 2**: fixed the eval-speed problem for real (bitboard-jitted feature encoder, same trick
+B1 used — verified byte-identical to the old encoder first; plus onnxruntime session tuning) —
+cost dropped to 7.6x classical. Also generated a better dataset (20,000 positions, depth-3
+labels, from `a10-killers`) and trained two architectures on it. Result was a genuine surprise:
+the more-accurate, same-speed-as-round-1 model ("same", RMSE 235.0) scored *worse* (16.7%) than
+round 1 did, while a smaller, *less* accurate but faster model ("small", RMSE 260.8, 5.6x
+classical) scored better (26.7% vs. `a10-killers`, 87.5% vs. `greedy`, 77.5% vs. `minimax` fast
+clock). Profiling (both `cProfile` and a clean unprofiled node-count comparison) found the real
+cause: even at 7.6x classical cost, NNUE still reaches only 70-90% of the classical engine's
+search nodes in the same time budget — a genuine depth handicap the accuracy gain doesn't yet pay
+for. Also found, as a side effect of this profiling: `python-chess`'s own move-generation machinery
+(not `evaluate()`) is ~70% of the *classical* engine's total search time — B1's eval speedup
+already made classical eval a non-issue.
+
+**Status: experimental, not shipped.** `versions/b2-nnue-small` is the current front-running NNUE
+candidate (best of the two round-2 models), `versions/b2-nnue` ("same") kept for reference. Root
+`agent.py` still runs the classical `a10-killers`-equivalent eval — no NNUE promotion decision has
+been made; that stays for the team to decide, not something shipped unilaterally.
