@@ -972,6 +972,33 @@ entries; time management already clamps safely even at `time_left_ms=0`).
 tonight. This is the actual submission candidate, not an experimental snapshot - a strong, clean
 result to close out local validation on.
 
+## Version-lineage audit: a real, important sample-variance finding
+
+Requested as a "look back across older versions to confirm nothing shipped has quietly
+regressed" sanity check. Re-ran `a10-killers` vs. its immediate predecessor `a9-ttmove` (30
+games, fast clock) - the exact matchup A10's own milestone write-up reported at **71.7%**
+(+16=11-3). Fresh 30-game sample: **50.0% (+9=12-9)** - a huge, genuine surprise.
+
+Checked file integrity first, since a result this different demanded ruling out corruption
+before anything else: `git log`/`diff` confirmed `a9-ttmove` is exactly the A9 snapshot and
+`a10-killers` is exactly that plus the documented killer-move diff, nothing stray. Checked for
+a randomness-seeding gap next: `tools/batch.py` alternates colors perfectly evenly (15/15 for 30
+games) and has no RNG seed anywhere. **Conclusion: with two fully-deterministic engines and no
+seeded randomness, the only real source of run-to-run variance is wall-clock timing jitter
+feeding the real-time `DEADLINE` checks** - on a tight 10s+0.1s clock, small hardware scheduling
+noise can tip which depth a critical move reaches, and between two engines this closely matched
+(one heuristic apart), that can plausibly swing a whole batch's aggregate score by 20+ points.
+Not a bug, not a regression - a genuine, now-confirmed limit on how much a single 30-game fast-
+clock sample can be trusted between close variants.
+
+**This finding became the single most-cited piece of evidence for the rest of the night** -
+directly motivating the A11 re-test at 50 games instead of 30, the repeated blend-ratio sampling,
+and the three-sample confirmation of blend+A11 later on. A planned follow-up comparison
+(`a10-killers` vs. `a8-rootorder`) was interrupted before completion and not resumed - no
+conclusion drawn from it, the single partial game discarded rather than reported.
+
+`game-logs/lineage-a10-vs-a9-recheck/`.
+
 ## Four requested experiments (2026-09-11): A11 re-test, classical+NNUE blend, int8 quantization, leaf-batching
 
 All four explicitly requested and tested; none adopted into any shipped path. Full detail here,
