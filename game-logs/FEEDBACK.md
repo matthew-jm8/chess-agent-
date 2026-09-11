@@ -1125,8 +1125,11 @@ much closer to the second sample, suggesting 78.0% really was the outlier.
 draws, 26 losses = 65.7%.** This is now a stable, well-supported estimate across three
 independent samples, not a single lucky or unlucky run. Genuinely better than the blend alone's
 confirmed 58.0% - a real, if more modest than first thought, improvement from adding A11 on top.
-The `greedy`/`minimax` legs (100%/80%/100%) have not been re-confirmed at a second sample and
-should be read with the same caution until they are.
+Re-ran the `minimax` fast-clock leg (the one non-sweep result, most likely to move) for a second
+sample: **87.5% (+16=3-1)**, close to the original 80.0% - combined (40 games): 83.75%. Holds up
+well, genuinely a strong leg, not a lucky first sample. `greedy` and the `minimax` competition-
+clock leg (both clean 100% sweeps) have not been re-confirmed but carry less doubt given the
+margin was already maximal.
 
 **Not adopted into root `agent.py` tonight.** Best-evidenced honest read: **blend+A11 combined
 (~65.7% vs. `a10-killers` across 150 games) is a real, meaningful improvement over blend alone
