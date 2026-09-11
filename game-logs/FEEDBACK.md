@@ -1092,3 +1092,23 @@ correctly verifying that class of search restructuring, this close to a hard dea
 precisely the kind of correctness risk this session has held back from taking all night.
 Diagnostic-only variants (`versions/b2-nnue-batched-rootonly`, `versions/b2-nnue-batched-qonly`)
 kept for reference alongside the main attempt.
+
+## Combined blend + A11 (history heuristic): the best result of the entire session
+
+Two independent positive signals from tonight - the classical+NNUE blend (58.0% alone) and A11's
+history heuristic (54.0% alone) - tested together in `versions/b2-blend-plus-a11` (the 50/50
+blend's `evaluate()`, plus `HISTORY`/`store_history` wired into `order_moves`/`negamax` exactly
+as in `a11-retest`). Straight to a 50-game test given tonight's own lesson about 30-game sample
+size for anything this close to call.
+
+**Result: 78.0% (+30=18-2) vs. `a10-killers` over 50 games.** Far beyond either component alone,
+and the best result by any B2-adjacent candidate all session - the two effects appear to combine
+super-additively rather than just stacking (58% and 54% alone; nowhere near enough on their own
+to predict 78% together). Verification for this combination followed the same standard as every
+other milestone: `ruff`/`mypy` clean, a real sanity `get_move()` call confirmed working before
+committing to the full batch.
+
+**Not adopted into root `agent.py` tonight** - genuinely the strongest B2-adjacent candidate of
+the night, but still only one 50-game sample against one opponent, discovered very late with the
+deadline hours away. This is the headline recommendation for the team's own review, not something
+to promote unilaterally at this hour. `game-logs/b2-blend-plus-a11-vs-a10-killers/`.
