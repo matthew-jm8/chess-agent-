@@ -1160,10 +1160,19 @@ losses - combined (12 games): 87.5%. `greedy`'s 100% sweep has not been re-confi
 the least doubt of any leg given the margin was already maximal against the weakest opponent.
 
 **Every leg of blend+A11's battery now has at least some repeated-sample evidence behind it,
-except `greedy`.** Final honest picture: ~65.7% vs. `a10-killers` (150 games), ~83.75% vs.
-`minimax` fast (40 games), ~87.5% vs. `minimax` competition clock (12 games), 100% vs. `greedy`
-(20 games, single sample). A real, meaningfully confirmed improvement over both the classical
-engine alone and the blend alone.
+except `greedy`.** Ran one final, large single batch (100 games, not another 50) against
+`a10-killers` for the most statistically robust individual sample of the night: **66.0%
+(+47=38-15)** - remarkably close to the three-sample average (65.7%), a strong sign the estimate
+has genuinely stabilized rather than still wandering. **Combining every `a10-killers` game
+played across all four samples tonight (250 games total): 120 wins, 89 draws, 41 losses =
+65.8%.**
+
+**Final honest picture, this is where the night's testing actually landed**: ~65.8% vs.
+`a10-killers` (250 games across 4 samples), ~83.75% vs. `minimax` fast (40 games across 2
+samples), ~87.5% vs. `minimax` competition clock (12 games across 2 samples), 100% vs. `greedy`
+(20 games, single sample, least in need of confirmation given the maximal margin). A real,
+thoroughly-confirmed improvement over both the classical engine alone and the blend alone -
+the single best-evidenced candidate produced by this entire session.
 
 **Not adopted into root `agent.py` tonight.** Best-evidenced honest read: **blend+A11 combined
 (~65.7% vs. `a10-killers` across 150 games) is a real, meaningful improvement over blend alone
