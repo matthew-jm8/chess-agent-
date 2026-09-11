@@ -997,10 +997,18 @@ Surprising given blending pays BOTH evals' cost rather than replacing one - the 
 explanation is that this was never purely a speed problem: the classical component's reliability
 appears to smooth out a lot of the NNUE net's standalone noisiness (RMSE ~235-261 against its own
 training labels is real, meaningful error), and that accuracy fix apparently matters more here
-than the added latency costs. A 50-game confirmation run is in progress
-(`game-logs/b2-blend-vs-a10-killers-50/`) given tonight's own lesson about 30-game sample
-variance - genuinely the most promising direction to keep investigating, not shipped tonight
-regardless of the confirmation result (an untuned 50/50 weight, one opponent, one clock).
+than the added latency costs.
+
+**Confirmed at 50 games (given tonight's own lesson about 30-game sample variance) - and it got
+BETTER, not worse: 58.0% (+18=22-10) vs. `a10-killers`.** This is a real, repeated win against
+the strongest classical snapshot, not just a close approach to parity - the standout result of
+the entire night. Still an untuned 50/50 weight, tested against one opponent on one clock so far
+- the standard `greedy`/`minimax` battery and alternate weight ratios (70/30, 30/70
+classical/NNUE, both already built in `versions/b2-blend-70-30`/`versions/b2-blend-30-70`) are
+still running. Not promoted to root `agent.py` tonight regardless - a change this significant,
+this close to the deadline, belongs in the summary sheet for the team's own decision, not applied
+unilaterally - but this is the first NNUE-adjacent result all session that's actually beaten the
+classical engine outright.
 
 **int8 dynamic quantization: real negative result - 1.22x SLOWER, not faster.** Quantized
 `b2-nnue-small`'s model via `onnxruntime.quantization.quantize_dynamic` (needed an explicit
