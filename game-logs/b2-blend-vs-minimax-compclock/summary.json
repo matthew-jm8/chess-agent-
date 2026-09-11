@@ -1,0 +1,74 @@
+{
+  "label": "b2-blend-vs-minimax-compclock",
+  "agent": "versions\\b2-blend",
+  "opponent": "baselines\\minimax",
+  "clock": "competition clock (120s+0.5s)",
+  "base_ms": 120000,
+  "increment_ms": 500,
+  "games": 6,
+  "wins": 4,
+  "draws": 1,
+  "losses": 1,
+  "score": 0.75,
+  "terminations": {
+    "checkmate": 4,
+    "adjudication": 1,
+    "threefold_repetition": 1
+  },
+  "results": [
+    {
+      "index": 1,
+      "pgn_file": "game-01.pgn",
+      "agent_color": "white",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 55
+    },
+    {
+      "index": 2,
+      "pgn_file": "game-02.pgn",
+      "agent_color": "black",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "loss",
+      "plies": 37
+    },
+    {
+      "index": 3,
+      "pgn_file": "game-03.pgn",
+      "agent_color": "white",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 149
+    },
+    {
+      "index": 4,
+      "pgn_file": "game-04.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "adjudication",
+      "score_for_agent": "win",
+      "plies": 300
+    },
+    {
+      "index": 5,
+      "pgn_file": "game-05.pgn",
+      "agent_color": "white",
+      "result": "draw",
+      "termination": "threefold_repetition",
+      "score_for_agent": "draw",
+      "plies": 170
+    },
+    {
+      "index": 6,
+      "pgn_file": "game-06.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 110
+    }
+  ]
+}
