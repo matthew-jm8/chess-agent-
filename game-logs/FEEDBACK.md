@@ -1014,17 +1014,20 @@ with a genuine loss, but still a clear majority.
 | 50/50 | 58.0% (50 games) / 51.7% (30 games) |
 | 70/30 | 63.3% (+13=12-5) |
 | 30/70 | **68.3% (+13=15-2)** - best so far |
-| 85/15 | testing |
+| 85/15 | 45.0% (+8=11-11) - the only ratio tested that LOSES to `a10-killers` |
 
-**Not a clean trend - genuinely surprising, and worth being honest about what it does and
-doesn't show.** 70/30 beat 50/50, but then 30/70 (the opposite direction) beat *both*. That's not
-a monotonic "more classical is better" or "more NNUE is better" story - given tonight's own
-repeated finding that 30-game samples carry real variance between reasonably-matched engines
-(the `a10`-vs-`a9` lineage recheck swung 71.7% -> 50.0%; A11 swung 35.0% -> 54.0%), the specific
-*ranking* between these three ratios is not trustworthy on this sample size alone. What IS
-robust: **all three tested ratios beat `a10-killers`**, by a comfortable margin, on independent
-samples - blending itself is the real, repeatable finding; the exact best ratio needs a properly
-powered sweep (more games per ratio) to pin down, not something to claim precisely tonight. Not promoted to root `agent.py` tonight regardless - a change this significant,
+**Not a clean trend at all - genuinely noisy, and worth being honest about what it does and
+doesn't show.** Ordered by NNUE weight: 0% (pure classical, i.e. `a10-killers` vs. itself) = 50%
+by definition, 15% = 45.0% (a loss), 30% = 63.3%, 50% = 58.0%/51.7%, 70% = 68.3%. That is NOT a
+monotonic curve in either direction - given tonight's own repeated finding that 30-game samples
+carry real variance between reasonably-matched engines (the `a10`-vs-`a9` lineage recheck swung
+71.7% -> 50.0%; A11 swung 35.0% -> 54.0%), the specific *ranking* between these ratios is not
+trustworthy on this sample size alone, and 85/15's loss could itself be as much noise as signal.
+What IS robust: **4 of the 5 tested ratios beat `a10-killers`**, several by a wide margin, on
+independent samples - blending itself is the real, repeatable finding; the exact best ratio
+needs a properly powered sweep (larger, equal samples per ratio, ideally with a fixed random
+seed per matchup for a fairer comparison) to pin down - explicitly flagged as follow-up work in
+the summary sheet, not something to claim precisely tonight. Not promoted to root `agent.py` tonight regardless - a change this significant,
 this close to the deadline, belongs in the summary sheet for the team's own decision, not applied
 unilaterally - but this is the first NNUE-adjacent result all session that's actually beaten the
 classical engine outright.
