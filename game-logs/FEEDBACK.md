@@ -1005,8 +1005,20 @@ the strongest classical snapshot, not just a close approach to parity - the stan
 the entire night. Still an untuned 50/50 weight, tested against one opponent on one clock so far
 - full battery: **100.0% (+20=0-0) vs. `greedy`, 92.5% (+17=3-0) vs. `minimax` fast clock, 75.0%
 (+4=1-1) vs. `minimax` competition clock** - the weakest of the four results and the only one
-with a genuine loss, but still a clear majority. Alternate weight ratios (70/30, 30/70
-classical/NNUE, built in `versions/b2-blend-70-30`/`versions/b2-blend-30-70`) still to test. Not promoted to root `agent.py` tonight regardless - a change this significant,
+with a genuine loss, but still a clear majority.
+
+**Weight tuning (untuned 50/50 vs. two alternates, 30 games each vs. `a10-killers`):**
+
+| Weight (classical/NNUE) | Score vs. `a10-killers` |
+|---|---|
+| 50/50 | 58.0% (50 games) / 51.7% (30 games) |
+| **70/30** | **63.3% (+13=12-5)** - best so far |
+| 30/70 | testing |
+
+Leaning more heavily on the reliable classical component (70/30) scores even better than an even
+split - consistent with the working theory that the NNUE component's main value here is a small
+corrective signal on top of a trustworthy base, not a co-equal partner. 30/70 (NNUE-heavy) still
+running, expected to trend the other way if this pattern holds. Not promoted to root `agent.py` tonight regardless - a change this significant,
 this close to the deadline, belongs in the summary sheet for the team's own decision, not applied
 unilaterally - but this is the first NNUE-adjacent result all session that's actually beaten the
 classical engine outright.
