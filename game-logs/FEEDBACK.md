@@ -1154,9 +1154,16 @@ independent samples, not a single lucky or unlucky run. Genuinely better than th
 confirmed 58.0% - a real, if more modest than first thought, improvement from adding A11 on top.
 Re-ran the `minimax` fast-clock leg (the one non-sweep result, most likely to move) for a second
 sample: **87.5% (+16=3-1)**, close to the original 80.0% - combined (40 games): 83.75%. Holds up
-well, genuinely a strong leg, not a lucky first sample. `greedy` and the `minimax` competition-
-clock leg (both clean 100% sweeps) have not been re-confirmed but carry less doubt given the
-margin was already maximal.
+well, genuinely a strong leg, not a lucky first sample. Also re-ran the `minimax` competition-
+clock leg: **75.0% (+3=3-0)**, down from the first sample's clean 100% sweep but still zero
+losses - combined (12 games): 87.5%. `greedy`'s 100% sweep has not been re-confirmed but carries
+the least doubt of any leg given the margin was already maximal against the weakest opponent.
+
+**Every leg of blend+A11's battery now has at least some repeated-sample evidence behind it,
+except `greedy`.** Final honest picture: ~65.7% vs. `a10-killers` (150 games), ~83.75% vs.
+`minimax` fast (40 games), ~87.5% vs. `minimax` competition clock (12 games), 100% vs. `greedy`
+(20 games, single sample). A real, meaningfully confirmed improvement over both the classical
+engine alone and the blend alone.
 
 **Not adopted into root `agent.py` tonight.** Best-evidenced honest read: **blend+A11 combined
 (~65.7% vs. `a10-killers` across 150 games) is a real, meaningful improvement over blend alone
