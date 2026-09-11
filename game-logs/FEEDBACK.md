@@ -1016,18 +1016,22 @@ with a genuine loss, but still a clear majority.
 | 30/70 | **68.3% (+13=15-2)** - best so far |
 | 85/15 | 45.0% (+8=11-11) - the only ratio tested that LOSES to `a10-killers` |
 
-**Not a clean trend at all - genuinely noisy, and worth being honest about what it does and
-doesn't show.** Ordered by NNUE weight: 0% (pure classical, i.e. `a10-killers` vs. itself) = 50%
-by definition, 15% = 45.0% (a loss), 30% = 63.3%, 50% = 58.0%/51.7%, 70% = 68.3%. That is NOT a
-monotonic curve in either direction - given tonight's own repeated finding that 30-game samples
-carry real variance between reasonably-matched engines (the `a10`-vs-`a9` lineage recheck swung
-71.7% -> 50.0%; A11 swung 35.0% -> 54.0%), the specific *ranking* between these ratios is not
-trustworthy on this sample size alone, and 85/15's loss could itself be as much noise as signal.
-What IS robust: **4 of the 5 tested ratios beat `a10-killers`**, several by a wide margin, on
-independent samples - blending itself is the real, repeatable finding; the exact best ratio
-needs a properly powered sweep (larger, equal samples per ratio, ideally with a fixed random
-seed per matchup for a fairer comparison) to pin down - explicitly flagged as follow-up work in
-the summary sheet, not something to claim precisely tonight. Not promoted to root `agent.py` tonight regardless - a change this significant,
+**Not a clean trend at all at 30 games - and the 50-game confirmation directly demonstrates why
+that caution was warranted.** Ordered by NNUE weight at 30 games: 0% (pure classical) = 50% by
+definition, 15% = 45.0% (a loss), 30% = 63.3%, 50% = 58.0%/51.7%, 70% = 68.3% - not a monotonic
+curve either direction.
+
+**Re-ran 30/70 at 50 games, same discipline as 50/50's own confirmation: 51.0% (+16=19-15) -
+barely above break-even, a huge drop from the 30-game sample's 68.3%.** This directly confirms
+the 30-game ratio ranking was substantially noise, not signal - exactly the same lesson as the
+`a10`-vs-`a9` lineage recheck (71.7% -> 50.0%) and A11 (35.0% -> 54.0%). **With two properly-sized
+samples now in hand, 50/50 (58.0% at 50 games) is the stronger, better-evidenced candidate of the
+two best-performing ratios - not 30/70 as the 30-game data alone suggested.** What remains robust
+regardless: blending clearly beats pure classical - both of the two ratios tested at 50 games
+won. The exact optimal weight still needs a properly powered sweep (the same 50-game standard
+across every candidate ratio, not a mix of 30- and 50-game samples) to pin down precisely - but
+**50/50 is the recommended starting point** if the team wants to pursue this further, being both
+the best-evidenced and the simplest (untuned, symmetric) choice. Not promoted to root `agent.py` tonight regardless - a change this significant,
 this close to the deadline, belongs in the summary sheet for the team's own decision, not applied
 unilaterally - but this is the first NNUE-adjacent result all session that's actually beaten the
 classical engine outright.
