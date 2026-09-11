@@ -1,4 +1,7 @@
 """The submission entrypoint. The platform imports this file and calls get_move."""
+# Resubmission marker (2026-09-11): forces a distinct upload after the platform's build step
+# failed on its own base image (pull access denied for aichessathon/agent-base) - purely
+# cosmetic, no logic below this line has changed.
 
 import math
 import random
