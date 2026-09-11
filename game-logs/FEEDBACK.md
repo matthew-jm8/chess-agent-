@@ -1003,8 +1003,9 @@ than the added latency costs.
 BETTER, not worse: 58.0% (+18=22-10) vs. `a10-killers`.** This is a real, repeated win against
 the strongest classical snapshot, not just a close approach to parity - the standout result of
 the entire night. Still an untuned 50/50 weight, tested against one opponent on one clock so far
-- the standard `greedy`/`minimax` battery and alternate weight ratios (70/30, 30/70
-classical/NNUE, both already built in `versions/b2-blend-70-30`/`versions/b2-blend-30-70`) are
+- battery so far: **100.0% (+20=0-0) vs. `greedy`, 92.5% (+17=3-0) vs. `minimax` fast clock**,
+zero losses in both - alternate weight ratios (70/30, 30/70 classical/NNUE, already built in
+`versions/b2-blend-70-30`/`versions/b2-blend-30-70`) and the `minimax` competition-clock leg
 still running. Not promoted to root `agent.py` tonight regardless - a change this significant,
 this close to the deadline, belongs in the summary sheet for the team's own decision, not applied
 unilaterally - but this is the first NNUE-adjacent result all session that's actually beaten the
