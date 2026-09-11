@@ -1,0 +1,72 @@
+{
+  "label": "b2-blend-plus-a11-vs-minimax-compclock",
+  "agent": "versions\\b2-blend-plus-a11",
+  "opponent": "baselines\\minimax",
+  "clock": "competition clock (120s+0.5s)",
+  "base_ms": 120000,
+  "increment_ms": 500,
+  "games": 6,
+  "wins": 6,
+  "draws": 0,
+  "losses": 0,
+  "score": 1.0,
+  "terminations": {
+    "checkmate": 6
+  },
+  "results": [
+    {
+      "index": 1,
+      "pgn_file": "game-01.pgn",
+      "agent_color": "white",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 149
+    },
+    {
+      "index": 2,
+      "pgn_file": "game-02.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 94
+    },
+    {
+      "index": 3,
+      "pgn_file": "game-03.pgn",
+      "agent_color": "white",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 185
+    },
+    {
+      "index": 4,
+      "pgn_file": "game-04.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 148
+    },
+    {
+      "index": 5,
+      "pgn_file": "game-05.pgn",
+      "agent_color": "white",
+      "result": "white",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 111
+    },
+    {
+      "index": 6,
+      "pgn_file": "game-06.pgn",
+      "agent_color": "black",
+      "result": "black",
+      "termination": "checkmate",
+      "score_for_agent": "win",
+      "plies": 188
+    }
+  ]
+}
