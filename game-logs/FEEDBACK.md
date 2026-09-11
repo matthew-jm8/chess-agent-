@@ -1009,16 +1009,22 @@ with a genuine loss, but still a clear majority.
 
 **Weight tuning (untuned 50/50 vs. two alternates, 30 games each vs. `a10-killers`):**
 
-| Weight (classical/NNUE) | Score vs. `a10-killers` |
+| Weight (classical/NNUE) | Score vs. `a10-killers` (30 games unless noted) |
 |---|---|
 | 50/50 | 58.0% (50 games) / 51.7% (30 games) |
-| **70/30** | **63.3% (+13=12-5)** - best so far |
-| 30/70 | testing |
+| 70/30 | 63.3% (+13=12-5) |
+| 30/70 | **68.3% (+13=15-2)** - best so far |
+| 85/15 | testing |
 
-Leaning more heavily on the reliable classical component (70/30) scores even better than an even
-split - consistent with the working theory that the NNUE component's main value here is a small
-corrective signal on top of a trustworthy base, not a co-equal partner. 30/70 (NNUE-heavy) still
-running, expected to trend the other way if this pattern holds. Not promoted to root `agent.py` tonight regardless - a change this significant,
+**Not a clean trend - genuinely surprising, and worth being honest about what it does and
+doesn't show.** 70/30 beat 50/50, but then 30/70 (the opposite direction) beat *both*. That's not
+a monotonic "more classical is better" or "more NNUE is better" story - given tonight's own
+repeated finding that 30-game samples carry real variance between reasonably-matched engines
+(the `a10`-vs-`a9` lineage recheck swung 71.7% -> 50.0%; A11 swung 35.0% -> 54.0%), the specific
+*ranking* between these three ratios is not trustworthy on this sample size alone. What IS
+robust: **all three tested ratios beat `a10-killers`**, by a comfortable margin, on independent
+samples - blending itself is the real, repeatable finding; the exact best ratio needs a properly
+powered sweep (more games per ratio) to pin down, not something to claim precisely tonight. Not promoted to root `agent.py` tonight regardless - a change this significant,
 this close to the deadline, belongs in the summary sheet for the team's own decision, not applied
 unilaterally - but this is the first NNUE-adjacent result all session that's actually beaten the
 classical engine outright.
