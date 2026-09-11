@@ -540,7 +540,25 @@ for. Also found, as a side effect of this profiling: `python-chess`'s own move-g
 (not `evaluate()`) is ~70% of the *classical* engine's total search time — B1's eval speedup
 already made classical eval a non-issue.
 
-**Status: experimental, not shipped.** `versions/b2-nnue-small` is the current front-running NNUE
-candidate (best of the two round-2 models), `versions/b2-nnue` ("same") kept for reference. Root
-`agent.py` still runs the classical `a10-killers`-equivalent eval — no NNUE promotion decision has
-been made; that stays for the team to decide, not something shipped unilaterally.
+**Round 3 (2026-09-11)**: four requested follow-up experiments. Two dead ends, measured and
+documented honestly: int8 quantization of `b2-nnue-small` is 1.22x *slower*, not faster (this
+network is too small for int8's efficiency gains to pay off); a full leaf-batching integration
+(a transposition-keyed eval cache, pre-warmed at the two natural batching points in the search)
+was built and verified fully correct, but real search showed no net win (pre-warming trades away
+alpha-beta's own pruning savings). Two real wins: A11 (history heuristic) re-tested at 50 games
+scored 54.0%, reversing its original apparent regression (now believed to have been sample
+noise); and **blending the classical eval with the NNUE net (50/50 weight) beats `a10-killers`
+outright — 58.0% confirmed across two 50-game samples**, and **combined with A11's history
+heuristic, 65.7% across three 50-game samples (150 games total)**. Both are the first NNUE-
+adjacent results all session to actually beat the classical engine, not just approach it.
+
+**Status: experimental, not shipped.** `versions/b2-blend-plus-a11` is the strongest tested
+candidate overall (65.7% vs. `a10-killers`, wins/sweeps against every other opponent tested);
+`versions/b2-blend` (50/50, no A11) is the next-best-evidenced, simpler alternative (58.0%,
+confirmed twice). `versions/b2-nnue-small` (pure NNUE, no blending) remains the prior round's
+result for reference but is superseded by the blend candidates. Root `agent.py` still runs the
+classical `a10-killers`-equivalent eval, plus one applied zero-risk fix (see Phase C) — no NNUE
+or blend promotion decision has been made; that stays for the team to decide, not something
+shipped unilaterally. Full numbers, the sample-variance investigation behind the confirmed
+figures above, and the version-lineage audit that motivated the repeated-sampling discipline are
+all in `game-logs/FEEDBACK.md`.
