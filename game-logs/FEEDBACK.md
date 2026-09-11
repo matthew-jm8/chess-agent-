@@ -1108,7 +1108,22 @@ to predict 78% together). Verification for this combination followed the same st
 other milestone: `ruff`/`mypy` clean, a real sanity `get_move()` call confirmed working before
 committing to the full batch.
 
+**Full battery completed - holds up across every opponent and clock tested:**
+
+| Opponent (clock) | Score | Record |
+|---|---|---|
+| `a10-killers` (fast) | 78.0% | +30 =18 -2 |
+| `greedy` (fast) | 100.0% | +20 =0 -0 |
+| `minimax` (fast) | 80.0% | +12 =8 -0 |
+| `minimax` (competition, 120s+0.5s) | 100.0% | +6 =0 -0 |
+
+Zero losses against anything except `a10-killers` itself, and even there only 2 losses in 50
+games. This is the strongest-performing candidate by every measure tested tonight.
+
 **Not adopted into root `agent.py` tonight** - genuinely the strongest B2-adjacent candidate of
-the night, but still only one 50-game sample against one opponent, discovered very late with the
-deadline hours away. This is the headline recommendation for the team's own review, not something
-to promote unilaterally at this hour. `game-logs/b2-blend-plus-a11-vs-a10-killers/`.
+the night, and now backed by a full battery rather than a single matchup, but still discovered
+very late with the deadline hours away, and still only one full pass at each battery leg (not
+the repeated-sample confirmation the blend-alone result got). This is the headline recommendation
+for the team's own review, not something to promote unilaterally at this hour.
+`game-logs/b2-blend-plus-a11-vs-a10-killers/`, `-vs-greedy/`, `-vs-minimax/`,
+`-vs-minimax-compclock/`.
