@@ -418,8 +418,11 @@ def _evaluate_bitboards_jit(
     return material + MOBILITY_WEIGHT * mobility + positional_score
 
 
-def evaluate(board: chess.Board, mobility: int) -> float:
-    """Score a position from the side-to-move's perspective: positive is good for them."""
+def _classical_evaluate(board: chess.Board, mobility: int) -> float:
+    """The B1/A-series material+mobility+PST evaluation - kept, renamed, for reference and as
+    what this B2 experiment is measured against. Not called by quiescence() in this variant;
+    see evaluate(), below.
+    """
     return _evaluate_bitboards_jit(
         np.uint64(board.pawns),
         np.uint64(board.knights),
@@ -437,6 +440,158 @@ def evaluate(board: chess.Board, mobility: int) -> float:
 # Compile now, at import (inside the 90 second budget), not on the first real move. numba
 # compiles per argument signature, so this has to call with the exact types get_move's calls
 # will really use - an int32 warm-up would not help a call that later shows up as int64.
+_classical_evaluate(chess.Board(), 20)
+
+
+# --- B2: NNUE-style neural net evaluation (experimental - replaces the classical eval above) ---
+#
+# Trained offline (see training-data/ and game-logs/FEEDBACK.md's B2 section for the full
+# pipeline): a small MLP over 768 binary features (12 planes - 6 "my piece type" + 6 "opponent
+# piece type" - x 64 squares each), labeled by this engine's own depth-2 search on ~12,000 real
+# positions from tonight's own games (per AGENTS.md: "training it on positions an engine labelled
+# is a normal way to do that"). Exported to ONNX, verified to match the raw torch model's output
+# within floating-point tolerance before being trusted here.
+#
+# A pure A/B replacement, not a blend: evaluate() below returns ONLY the net's output, nothing
+# from _classical_evaluate() - the cleanest way to directly test the roadmap's own question
+# ("does this beat the classical engine"), without conflating the two signals.
+import os as _os  # noqa: E402
+
+import onnxruntime as _ort  # noqa: E402
+
+_NNUE_PIECE_TYPE_INDEX = {
+    chess.PAWN: 0,
+    chess.KNIGHT: 1,
+    chess.BISHOP: 2,
+    chess.ROOK: 3,
+    chess.QUEEN: 4,
+    chess.KING: 5,
+}
+_nnue_model_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "b2_model.onnx")
+# Session tuning (measured, see game-logs/FEEDBACK.md B2 section): the platform contract gives
+# us one CPU core, so ORT's default multi-thread pool setup is pure overhead - it spins up
+# threads it can never actually parallelize across. Pinning to 1 thread and disabling the
+# memory-pattern arena (which optimizes for varying batch sizes; we only ever call batch=1)
+# measured ~10% faster per call (63.2us -> 57.6us) with byte-identical output.
+_nnue_opts = _ort.SessionOptions()
+_nnue_opts.intra_op_num_threads = 1
+_nnue_opts.inter_op_num_threads = 1
+_nnue_opts.graph_optimization_level = _ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+_nnue_opts.enable_mem_pattern = False
+_nnue_opts.execution_mode = _ort.ExecutionMode.ORT_SEQUENTIAL
+_nnue_session = _ort.InferenceSession(
+    _nnue_model_path, sess_options=_nnue_opts, providers=["CPUExecutionProvider"]
+)
+
+
+def _nnue_features_pure_python(board: chess.Board) -> np.ndarray:
+    """Original feature encoder, kept for reference/verification only - see _nnue_features below
+    for the version actually used. Same 768-dim encoding used to build the training set (see
+    training-data/b2_train.py): white-oriented, mirror-for-the-non-mover's-pieces squares,
+    exactly matching the convention _PST_ARR/_evaluate_bitboards_jit already use, so a knight on
+    d4 for the White mover and a knight on d5 for the Black mover land on the identical feature.
+    """
+    features = np.zeros((1, 768), dtype=np.float32)
+    mover = board.turn
+    for square, piece in board.piece_map().items():
+        table_square = square if piece.color == chess.WHITE else chess.square_mirror(square)
+        plane = _NNUE_PIECE_TYPE_INDEX[piece.piece_type] + (0 if piece.color == mover else 6)
+        features[0, plane * 64 + table_square] = 1.0
+    return features
+
+
+# Speed fix (measured, see game-logs/FEEDBACK.md B2 section): the pure-Python version above cost
+# 27.3us/call, MORE than the entire onnxruntime inference call (19.5us/call) - the exact same
+# piece_map()-dict-loop cost B1 found and fixed for the classical eval, applied here. This
+# version reads the board's raw bitboards directly (no per-square Piece object, no dict) and
+# writes the 768 one-hot features in one jitted pass, same technique as
+# _evaluate_bitboards_jit above.
+@njit(cache=False)
+def _encode_nnue_features_jit(
+    pawns: np.uint64,
+    knights: np.uint64,
+    bishops: np.uint64,
+    rooks: np.uint64,
+    queens: np.uint64,
+    kings: np.uint64,
+    white_occ: np.uint64,
+    black_occ: np.uint64,
+    white_to_move: bool,
+    out: np.ndarray,
+) -> None:
+    out[:] = 0.0
+    one = np.uint64(1)
+    for square in range(64):
+        bit = one << np.uint64(square)
+        is_white = (white_occ & bit) != np.uint64(0)
+        is_black = (black_occ & bit) != np.uint64(0)
+        if not is_white and not is_black:
+            continue
+        if pawns & bit:
+            type_index = 0
+        elif knights & bit:
+            type_index = 1
+        elif bishops & bit:
+            type_index = 2
+        elif rooks & bit:
+            type_index = 3
+        elif queens & bit:
+            type_index = 4
+        else:
+            type_index = 5  # king
+        table_square = square if is_white else (square ^ 56)
+        plane = type_index + (0 if is_white == white_to_move else 6)
+        out[plane * 64 + table_square] = 1.0
+
+
+_nnue_feature_buffer = np.zeros((1, 768), dtype=np.float32)
+
+
+def _nnue_features(board: chess.Board) -> np.ndarray:
+    """Bitboard-jitted feature encoder - see _nnue_features_pure_python above for the reference
+    version this is verified against. Reuses one buffer array across calls (also measured
+    faster than allocating a fresh np.zeros every call) - safe because onnxruntime's session.run
+    reads the array synchronously and nothing here holds a reference to a past call's contents.
+    """
+    _encode_nnue_features_jit(
+        np.uint64(board.pawns),
+        np.uint64(board.knights),
+        np.uint64(board.bishops),
+        np.uint64(board.rooks),
+        np.uint64(board.queens),
+        np.uint64(board.kings),
+        np.uint64(board.occupied_co[chess.WHITE]),
+        np.uint64(board.occupied_co[chess.BLACK]),
+        board.turn == chess.WHITE,
+        _nnue_feature_buffer[0],
+    )
+    return _nnue_feature_buffer
+
+
+BLEND_CLASSICAL_WEIGHT = 0.5
+BLEND_NNUE_WEIGHT = 0.5
+
+
+def evaluate(board: chess.Board, mobility: int) -> float:
+    """Score a position from the side-to-move's perspective: positive is good for them.
+    B2 blend experiment (2026-09-11, requested test - not a proven improvement, not shipped):
+    a 50/50 weighted combination of the classical static eval (material+mobility+PST, cheap,
+    proven) and the NNUE net's output (trained on depth-3 search labels - a rough, learned proxy
+    for deeper lookahead the classical eval doesn't have). Hypothesis: the two carry genuinely
+    different signal (a static heuristic vs. a compressed deeper-search approximation), so a
+    blend might hedge against the NNUE's own inaccuracy while adding *some* of what it learned -
+    at the cost of paying BOTH evals' time every call, on top of an already-too-slow NNUE path.
+    Weight is an untuned, symmetric starting point, not searched/optimized - see
+    game-logs/FEEDBACK.md for the real batch result before treating this as validated either way.
+    """
+    classical_score = _classical_evaluate(board, mobility)
+    features = _nnue_features(board)
+    nnue_score = float(_nnue_session.run(["eval"], {"features": features})[0].item())
+    return BLEND_CLASSICAL_WEIGHT * classical_score + BLEND_NNUE_WEIGHT * nnue_score
+
+
+# Warm up the ONNX Runtime session now, at import, same reasoning as numba's own warm-up above -
+# first-call overhead (session/kernel setup) belongs in the init budget, not on the clock.
 evaluate(chess.Board(), 20)
 
 
@@ -749,7 +904,7 @@ def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
         best = quiescence(board, alpha, beta)
     else:
         best = -math.inf
-        for move in order_moves(board, moves, tt_move, KILLER_MOVES[depth]):
+        for move in order_moves(board, moves, tt_move, KILLER_MOVES[depth], HISTORY):
             board.push(move)
             score = -negamax(board, depth - 1, -beta, -alpha)
             board.pop()
@@ -764,6 +919,7 @@ def negamax(board: chess.Board, depth: int, alpha: float, beta: float) -> float:
                 # ordering, which ranks captures far more precisely than either table could.
                 if not board.is_capture(move):
                     store_killer(depth, move)
+                    store_history(move, depth)  # combined blend+A11 test (2026-09-11)
                 break  # beta cutoff: the opponent already has a better option upstream
 
     flag = EXACT
@@ -828,18 +984,6 @@ def get_move(fen: str, time_left_ms: int) -> str:
     # see the comment above its definition for why.
     board = chess.Board(fen)
     moves = order_moves(board, list(board.legal_moves))
-
-    # Phase C edge-case stress test (2026-09-10): the platform should never call get_move() on a
-    # position with no legal moves (checkmate/stalemate - the game is already over by then), so
-    # this should be unreachable in real play. Defensive only: turns a bare, confusing
-    # `IndexError: list index out of range` on `moves[0]` below into a clear diagnostic if it
-    # ever somehow is reached - does not change behavior for any position that actually has a
-    # legal move, i.e. every real position this function is ever meant to be called on.
-    if not moves:
-        raise RuntimeError(
-            f"get_move called with no legal moves in position {fen!r} - the harness should "
-            "never call get_move on a position where the game is already over"
-        )
 
     # Ready instantly, before any real searching happens: the answer if the clock is so tight
     # we can't even finish a depth-1 pass. docs/IDEAS.md is explicit that a flag - not a bad

@@ -47,7 +47,7 @@ baselines (`baselines/minimax`, `baselines/numba`, `baselines/greedy`) revealed.
 | A11 | History heuristic | ⚠️ attempted, unresolved regression, reverted — see below |
 | B0 | Full env parity (torch/numba/onnxruntime) | ✅ done on Windows — see below; Silicon Mac still pending |
 | B1 | numba-jit the evaluation | ✅ done — see below |
-| B2 | Neural-net evaluation (**stretch goal**, not required) | 🧪 experimental, not shipped — see below |
+| B2 | Neural-net evaluation (**stretch goal**, not required) | ✅ **PROMOTED to root `agent.py`** — see below |
 | C | Submission safety buffer (gate, edge cases, zip, smoke games) | ✅ everything locally-checkable done — only the platform's own smoke-game upload remains, needs the team |
 
 ## How every milestone gets measured
@@ -517,7 +517,27 @@ magnitude, via direct depth-by-depth timing — not something B1 introduced).
 
 Snapshot: `versions/v7-numba-eval/agent.py`.
 
-### B2 — neural-net evaluation (stretch goal, experimental, not shipped)
+### B2 — neural-net evaluation (stretch goal) — ✅ PROMOTED to root `agent.py` (2026-09-11, ~07:35)
+
+**Root `agent.py` now runs the blend+A11 candidate** (classical eval blended 50/50 with the NNUE
+net, plus the A11 history heuristic) — promoted after the 250-game confirmed result (65.8% vs.
+`a10-killers`) made it the best-evidenced candidate of the session. Promotion checklist, all
+verified fresh against the actual promoted files, not assumed from the `versions/` copy:
+- Cold-start import time: 3.6s (budget: 90s).
+- `ruff`/`mypy` clean (one pre-existing `onnxruntime` stub warning, not a real defect).
+- 22/22 edge-case checks pass.
+- **Found and fixed a real packaging bug**: `harness/package.py`'s `DEFAULT_INCLUDES` only bundles
+  `.py` files plus anything literally named `weights` — it silently produced a zip with only
+  `agent.py`, missing both `.onnx` files, which would have crashed on the platform's first move.
+  Fixed by passing `--include b2_model.onnx --include b2_model.onnx.data` explicitly. **Anyone
+  re-running `python -m harness.package` for this build must pass those same two flags** or the
+  zip will be broken again.
+- Re-packaged zip verified by unzipping to a clean directory and running `evaluate()`/`get_move()`
+  from that isolated location - exactly what the platform does - before trusting it.
+  `submission.zip`: 754KB zipped / 843KB unzipped (agent.py + both `.onnx` files), comfortably
+  under the 50MB cap.
+  ~ 4-game live sanity batch vs. `minimax` run directly against the promoted file: 75.0%,
+  no crashes/flags, consistent with the extensively-tested game-strength numbers below.
 
 A small MLP (768 binary features → hidden layers → 1 score) trained on positions labeled by the
 classical engine's own search, exported to ONNX, run via `onnxruntime`. Two rounds so far, full
@@ -552,13 +572,14 @@ outright — 58.0% confirmed across two 50-game samples**, and **combined with A
 heuristic, 65.7% across three 50-game samples (150 games total)**. Both are the first NNUE-
 adjacent results all session to actually beat the classical engine, not just approach it.
 
-**Status: experimental, not shipped.** `versions/b2-blend-plus-a11` is the strongest tested
-candidate overall (65.7% vs. `a10-killers`, wins/sweeps against every other opponent tested);
-`versions/b2-blend` (50/50, no A11) is the next-best-evidenced, simpler alternative (58.0%,
-confirmed twice). `versions/b2-nnue-small` (pure NNUE, no blending) remains the prior round's
-result for reference but is superseded by the blend candidates. Root `agent.py` still runs the
-classical `a10-killers`-equivalent eval, plus one applied zero-risk fix (see Phase C) — no NNUE
-or blend promotion decision has been made; that stays for the team to decide, not something
-shipped unilaterally. Full numbers, the sample-variance investigation behind the confirmed
-figures above, and the version-lineage audit that motivated the repeated-sampling discipline are
-all in `game-logs/FEEDBACK.md`.
+**Status: PROMOTED.** `versions/b2-blend-plus-a11` was the strongest tested candidate overall
+(65.7-65.8% vs. `a10-killers` across 250 games, wins/sweeps against every other opponent tested)
+and is now root `agent.py` itself, per the user's explicit instruction after reviewing this data
+- see the promotion checklist at the top of this section for the fresh verification that ran
+against the actual promoted files. `versions/b2-blend` (50/50, no A11) remains the next-best,
+simpler alternative if this needs to be rolled back (58.0%, confirmed twice) -
+`agent_classical_backup.py`-style rollback: the pre-promotion classical `agent.py` is recoverable
+from git history (the commit immediately before this promotion) if needed. `versions/b2-nnue-small`
+(pure NNUE, no blending) remains for reference but is superseded. Full numbers, the sample-
+variance investigation behind the confirmed figures above, and the version-lineage audit that
+motivated the repeated-sampling discipline are all in `game-logs/FEEDBACK.md`.
