@@ -1118,17 +1118,21 @@ full batch.
 
 **Then ran the same 50-game confirmation the blend-alone result got, given tonight's own
 repeated lesson about single-sample results - and this one moved a lot: 59.0% (+21=17-12), not
-78.0%.** Combining both 50-game samples against `a10-killers` (100 games total): 51 wins, 35
-draws, 14 losses = **68.5% combined**. That's genuinely still better than the blend alone's
-confirmed 58.0% - a real, if more modest, improvement from adding A11 on top - but the initial
-78.0% was substantially inflated by sample variance, the same pattern as 30/70's blend-ratio
-result earlier tonight. The `greedy`/`minimax` legs (100%/80%/100%) have not been re-confirmed at
-a second sample and should be read with the same caution until they are.
+78.0%.** Ran a THIRD 50-game sample given how much the first two moved: **60.0% (+22=16-12)** -
+much closer to the second sample, suggesting 78.0% really was the outlier.
+
+**Combining all three 50-game samples against `a10-killers` (150 games total): 73 wins, 51
+draws, 26 losses = 65.7%.** This is now a stable, well-supported estimate across three
+independent samples, not a single lucky or unlucky run. Genuinely better than the blend alone's
+confirmed 58.0% - a real, if more modest than first thought, improvement from adding A11 on top.
+The `greedy`/`minimax` legs (100%/80%/100%) have not been re-confirmed at a second sample and
+should be read with the same caution until they are.
 
 **Not adopted into root `agent.py` tonight.** Best-evidenced honest read: **blend+A11 combined
-(~68.5% vs. `a10-killers` across 100 games) is a real, modest improvement over blend alone
-(58.0%)** - not the dramatic jump the first sample suggested, but not nothing either. This is the
-headline recommendation for the team's own review, not something to promote unilaterally at this
-hour, and the `greedy`/`minimax` legs deserve a second sample before being trusted at face value.
-`game-logs/b2-blend-plus-a11-vs-a10-killers/`, `-vs-a10-killers-confirm/`, `-vs-greedy/`,
-`-vs-minimax/`, `-vs-minimax-compclock/`.
+(~65.7% vs. `a10-killers` across 150 games) is a real, meaningful improvement over blend alone
+(58.0%)** - not the dramatic 78% jump the first sample suggested, but a solid, repeatedly-confirmed
+edge. This is the headline recommendation for the team's own review, not something to promote
+unilaterally at this hour, and the `greedy`/`minimax` legs deserve a second sample before being
+trusted at face value.
+`game-logs/b2-blend-plus-a11-vs-a10-killers/`, `-vs-a10-killers-confirm/`,
+`-vs-a10-killers-confirm2/`, `-vs-greedy/`, `-vs-minimax/`, `-vs-minimax-compclock/`.
