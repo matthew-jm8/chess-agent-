@@ -1101,12 +1101,11 @@ blend's `evaluate()`, plus `HISTORY`/`store_history` wired into `order_moves`/`n
 as in `a11-retest`). Straight to a 50-game test given tonight's own lesson about 30-game sample
 size for anything this close to call.
 
-**Result: 78.0% (+30=18-2) vs. `a10-killers` over 50 games.** Far beyond either component alone,
-and the best result by any B2-adjacent candidate all session - the two effects appear to combine
-super-additively rather than just stacking (58% and 54% alone; nowhere near enough on their own
-to predict 78% together). Verification for this combination followed the same standard as every
-other milestone: `ruff`/`mypy` clean, a real sanity `get_move()` call confirmed working before
-committing to the full batch.
+**First result: 78.0% (+30=18-2) vs. `a10-killers` over 50 games.** Far beyond either component
+alone, apparently combining super-additively rather than just stacking (58% and 54% alone).
+Verification for this combination followed the same standard as every other milestone:
+`ruff`/`mypy` clean, a real sanity `get_move()` call confirmed working before committing to the
+full batch.
 
 **Full battery completed - holds up across every opponent and clock tested:**
 
@@ -1117,13 +1116,19 @@ committing to the full batch.
 | `minimax` (fast) | 80.0% | +12 =8 -0 |
 | `minimax` (competition, 120s+0.5s) | 100.0% | +6 =0 -0 |
 
-Zero losses against anything except `a10-killers` itself, and even there only 2 losses in 50
-games. This is the strongest-performing candidate by every measure tested tonight.
+**Then ran the same 50-game confirmation the blend-alone result got, given tonight's own
+repeated lesson about single-sample results - and this one moved a lot: 59.0% (+21=17-12), not
+78.0%.** Combining both 50-game samples against `a10-killers` (100 games total): 51 wins, 35
+draws, 14 losses = **68.5% combined**. That's genuinely still better than the blend alone's
+confirmed 58.0% - a real, if more modest, improvement from adding A11 on top - but the initial
+78.0% was substantially inflated by sample variance, the same pattern as 30/70's blend-ratio
+result earlier tonight. The `greedy`/`minimax` legs (100%/80%/100%) have not been re-confirmed at
+a second sample and should be read with the same caution until they are.
 
-**Not adopted into root `agent.py` tonight** - genuinely the strongest B2-adjacent candidate of
-the night, and now backed by a full battery rather than a single matchup, but still discovered
-very late with the deadline hours away, and still only one full pass at each battery leg (not
-the repeated-sample confirmation the blend-alone result got). This is the headline recommendation
-for the team's own review, not something to promote unilaterally at this hour.
-`game-logs/b2-blend-plus-a11-vs-a10-killers/`, `-vs-greedy/`, `-vs-minimax/`,
-`-vs-minimax-compclock/`.
+**Not adopted into root `agent.py` tonight.** Best-evidenced honest read: **blend+A11 combined
+(~68.5% vs. `a10-killers` across 100 games) is a real, modest improvement over blend alone
+(58.0%)** - not the dramatic jump the first sample suggested, but not nothing either. This is the
+headline recommendation for the team's own review, not something to promote unilaterally at this
+hour, and the `greedy`/`minimax` legs deserve a second sample before being trusted at face value.
+`game-logs/b2-blend-plus-a11-vs-a10-killers/`, `-vs-a10-killers-confirm/`, `-vs-greedy/`,
+`-vs-minimax/`, `-vs-minimax-compclock/`.
