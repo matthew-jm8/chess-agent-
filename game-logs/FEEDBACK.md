@@ -808,6 +808,26 @@ sanity games all still clean). Full data: `game-logs/a11-history-vs-a10/` (the b
 session's own diagnostic scripts' output recorded here rather than as separate files (matching
 how every other same-night flag/regression investigation was written up).
 
+**Update (2026-09-11): the fresh look happened, on a bigger sample.** Re-wired the same dormant
+`HISTORY`/`store_history` code (unchanged since the investigation above) into a new
+`versions/a11-retest`, re-verified correct (0/8 fixed-depth score mismatches, same check as
+before), and re-ran vs. `a10-killers` at **50 games instead of 30** - motivated directly by this
+same session's own discovery, hours later, that a *supposedly settled* comparison
+(`a10-killers` vs. `a9-ttmove`) swung from a documented 71.7% down to 50.0% between two 30-game
+samples of the same two engines (see the lineage-audit section below) - real evidence that 30
+games is not always enough to trust a result between two closely-matched engines on this fast
+clock, given real-time search timing jitter is the only source of run-to-run variance between two
+otherwise-fully-deterministic agents.
+
+**Result: 54.0% (+17=20-13)** - a mild *positive*, not the earlier 35.0% regression. This
+strongly suggests the original batch that triggered the revert was itself an unlucky sample, not
+evidence of a real problem with the mechanism - consistent with the a10-vs-a9 finding, and with
+all three of the original investigation's own checks (correctness, efficiency, real move-choice
+comparison) having found nothing wrong. **Still not adopted**: 54% is a real edge but a thin one,
+not decisive, and this was surfaced with under 12 hours left before the submission deadline -
+not the moment to change the shipped search on a mild, noisy-looking signal. Recorded here as a
+genuine finding for whenever there's time to revisit it properly, not shipped.
+
 ## Milestone B2, round 2 — deeper/denser training data, a real speed fix, and a genuine puzzle
 
 Round 1 (12,000 positions, depth-2 labels) lost badly to `a10-killers` (25.0%), traced to the
@@ -951,3 +971,90 @@ entries; time management already clamps safely even at `time_left_ms=0`).
 120s+0.5s): 86.7% (+22=8-0), zero losses, zero flags.** Clears the 85%+ target discussed earlier
 tonight. This is the actual submission candidate, not an experimental snapshot - a strong, clean
 result to close out local validation on.
+
+## Four requested experiments (2026-09-11): A11 re-test, classical+NNUE blend, int8 quantization, leaf-batching
+
+All four explicitly requested and tested; none adopted into any shipped path. Full detail here,
+short version in the summary sheet.
+
+**A11 (history heuristic) re-test: 54.0% (+17=20-13) over 50 games vs. `a10-killers`** - a real
+reversal from the original 35.0% "regression." Re-wired the same dormant, unchanged
+`HISTORY`/`store_history` code into `versions/a11-retest`, re-verified correct (0/8 fixed-depth
+score mismatches, same check as before), and re-ran at 50 games instead of 30 - motivated by this
+session's own discovery, hours earlier, that a *supposedly settled* comparison (`a10-killers` vs.
+`a9-ttmove`) swung from a documented 71.7% to 50.0% between two 30-game samples of the same two
+engines (see the lineage-audit section). Strongly suggests the original regression was itself an
+unlucky sample, not a real problem - consistent with all three of the original investigation's
+checks having found nothing wrong. Still not adopted: 54% is a real edge but a thin, noisy-looking
+one, surfaced with under 12 hours before the deadline - not the moment to change the shipped
+search on a mild signal. `game-logs/a11-retest-vs-a10-killers/`.
+
+**Classical + NNUE blend: 51.7% (+8=15-7) over 30 games vs. `a10-killers`** - by far the best
+NNUE-adjacent result of the night, a huge jump from either pure-NNUE candidate (16.7%/26.7%).
+`versions/b2-blend` (built on `b2-nnue-small`): `evaluate()` returns a 50/50 (untuned, symmetric,
+not searched/optimized) weighted average of `_classical_evaluate()` and the NNUE net's output.
+Surprising given blending pays BOTH evals' cost rather than replacing one - the likely
+explanation is that this was never purely a speed problem: the classical component's reliability
+appears to smooth out a lot of the NNUE net's standalone noisiness (RMSE ~235-261 against its own
+training labels is real, meaningful error), and that accuracy fix apparently matters more here
+than the added latency costs. A 50-game confirmation run is in progress
+(`game-logs/b2-blend-vs-a10-killers-50/`) given tonight's own lesson about 30-game sample
+variance - genuinely the most promising direction to keep investigating, not shipped tonight
+regardless of the confirmation result (an untuned 50/50 weight, one opponent, one clock).
+
+**int8 dynamic quantization: real negative result - 1.22x SLOWER, not faster.** Quantized
+`b2-nnue-small`'s model via `onnxruntime.quantization.quantize_dynamic` (needed an explicit
+`quant_pre_process` shape-inference pass first - the raw exported model failed with a
+`ShapeInferenceError` otherwise). File size dropped 7.8x (789KB -> 101KB) and the accuracy cost
+was small (mean abs diff 6.1 vs. the model's own 260.8 RMSE, ~2%) - but measured inference speed
+was *worse* (31.75us/call vs. 26.10us/call fp32), on this CPU, for this network. Root cause: a
+network this small doesn't have enough raw matmul work for int8's per-op efficiency gains to
+outweigh the dequantization bookkeeping overhead - the opposite regime from where quantization
+usually pays off (large networks, real compute-bound cost). Not pursued further.
+
+**Leaf-batching: real, substantial throughput win in isolation: a genuinely major finding, but it
+did not translate into faster real search.** Standalone benchmark (stacking N positions into one
+onnxruntime call via the model's already-declared dynamic batch axis): batch size 64 dropped
+per-position cost to ~4.06us, matching the classical eval's own cost and a 10x improvement over
+one-at-a-time calls - strong evidence onnxruntime's per-call cost here is dominated by fixed
+dispatch overhead, not compute.
+
+Built the "proper" integration this pointed toward: `versions/b2-nnue-batched`, adding a
+transposition-keyed `_EVAL_CACHE` (persists the whole game, like TT - a cached eval score is a
+fact about a position that never goes stale) that `evaluate()` checks first, pre-warmed by
+`_prewarm_eval_cache()` at the two points in the code that already iterate over a full move list
+one at a time and immediately need each resulting position's stand-pat score: negamax's depth==1
+case, and quiescence's own capture-candidate loop. Verified thoroughly before trusting it:
+batched vs. individual onnxruntime output is bit-for-bit identical (450/450 exact matches, max
+diff 0.0), and `negamax()` at a fixed depth returns the EXACT same score with batching enabled as
+the plain unbatched version (0/12 mismatches) - the cache is provably transparent to search
+correctness, by construction (it can only ever return a value a direct call would have produced).
+
+**Real-world node-reach measurement (same unprofiled counter technique as the earlier B2
+investigation) found no net win - most tested variants explored FEWER nodes than the plain
+unbatched baseline in the same time budget:**
+
+| Variant | Opening | Middlegame | Endgame |
+|---|---|---|---|
+| Unbatched baseline | 12,449 | 14,144 | 10,340 |
+| Both prewarm points | 9,442 | 13,419 | 10,265 |
+| negamax depth==1 prewarm only | 8,209 | 12,886 | 9,105 |
+| quiescence prewarm only | 9,277 | 9,166 | 11,231 |
+
+Root cause: pre-warming evaluates *every* candidate in a move list upfront, which trades away
+alpha-beta's own adaptive pruning - real move ordering (TT-move hint, killer moves) already
+causes most candidate lists to cut off after 1-2 moves, so the dramatic batch=64 speedup measured
+in isolation never gets the chance to apply; unbatched search was already skipping most of what
+batching pays to pre-compute regardless. The negamax depth==1 prewarm was the larger offender
+(fires once per iterative-deepening depth level, pre-evaluating all ~20-40 root-adjacent moves
+even when a strong TT-hint would cut the real loop off almost immediately).
+
+**Conclusion: correctly implemented and verified, but not adopted - doesn't deliver.** The
+throughput finding itself remains real and worth real future investment: closing this gap
+properly needs the harder architecture originally scoped (4-8+ hours) - deferred/coroutine-based
+evaluation that only batches what the search would have evaluated anyway, not a predictive
+pre-warm that pays for branches pruning would have skipped. Not attempted tonight: building and
+correctly verifying that class of search restructuring, this close to a hard deadline, is
+precisely the kind of correctness risk this session has held back from taking all night.
+Diagnostic-only variants (`versions/b2-nnue-batched-rootonly`, `versions/b2-nnue-batched-qonly`)
+kept for reference alongside the main attempt.
